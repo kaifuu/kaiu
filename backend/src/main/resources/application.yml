@@ -1,0 +1,55 @@
+server:
+  port: 8181
+
+spring:
+  application:
+    name: emergency-inspection
+  datasource:
+    # 容器把 5432 映射到宿主机 5433,避开本机可能已占用的 5432
+    url: jdbc:postgresql://localhost:5433/emergency_inspect
+    driver-class-name: org.postgresql.Driver
+    username: inspect
+    password: inspect123
+  # 建表脚本幂等(全部 IF NOT EXISTS),每次启动执行;与 docker-entrypoint-initdb.d 共用同一份文件
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:sql/schema.sql
+      continue-on-error: false
+  jackson:
+    time-zone: GMT+8
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+
+# 无状态令牌:secret 至少 32 字节(HS256 要求 256 位);生产用环境变量覆盖
+jwt:
+  secret: ${JWT_SECRET:emergency-inspection-platform-default-secret-key-2026}
+  issuer: emergency-inspection
+  ttl-hours: 12
+
+# 默认密码(人员管理新增/重置时使用)
+user:
+  default-password: "123456"
+
+# 设备接入:大疆上云 API(机场 / 无人机经 MQTT 直连本平台的 Netty Broker)
+dji:
+  mqtt:
+    enabled: true
+    port: 1883                # 设备连接的 MQTT 端口
+    max-connections: 500
+    idle-timeout-seconds: 180 # 读空闲超时(设备每 30s 发 PINGREQ,超时即判掉线)
+  command:
+    timeout-seconds: 15       # 指令下发后等待 services_reply 的超时
+    history-keep: 2000        # 指令记录保留条数
+
+logging:
+  level:
+    com.emergency: info

@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: inspect-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: emergency_inspect
+      POSTGRES_USER: inspect
+      POSTGRES_PASSWORD: inspect123
+      TZ: Asia/Shanghai
+    ports:
+      - "5433:5432"
+    volumes:
+      - inspect_pgdata:/var/lib/postgresql/data
+      # 首启建表(与后端 spring.sql.init 共用同一份幂等 DDL)
+      - ./backend/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inspect -d emergency_inspect"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  inspect_pgdata:

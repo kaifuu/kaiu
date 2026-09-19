@@ -1,0 +1,13 @@
+{
+  "name": "dji-device-sim",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "大疆上云 API 设备模拟器:扮演一台机场 + 一台无人机,用于无真机时验证平台接入链路",
+  "scripts": {
+    "start": "node sim.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.1"
+  }
+}
