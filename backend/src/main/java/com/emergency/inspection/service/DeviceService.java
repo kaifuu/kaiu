@@ -8,9 +8,15 @@ import com.emergency.inspection.common.BizException;
 import com.emergency.inspection.common.PageUtil;
 import com.emergency.inspection.dto.query.DeviceQuery;
 import com.emergency.inspection.entity.Device;
+import com.emergency.inspection.entity.DeviceAiConfig;
+import com.emergency.inspection.entity.DeviceAiTarget;
 import com.emergency.inspection.entity.DeviceEvent;
+import com.emergency.inspection.entity.DeviceLogFile;
 import com.emergency.inspection.entity.DeviceOsd;
+import com.emergency.inspection.mapper.DeviceAiConfigMapper;
+import com.emergency.inspection.mapper.DeviceAiTargetMapper;
 import com.emergency.inspection.mapper.DeviceEventMapper;
+import com.emergency.inspection.mapper.DeviceLogFileMapper;
 import com.emergency.inspection.mapper.DeviceMapper;
 import com.emergency.inspection.mapper.DeviceOsdMapper;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +42,9 @@ public class DeviceService {
     private final DeviceMapper deviceMapper;
     private final DeviceOsdMapper osdMapper;
     private final DeviceEventMapper eventMapper;
+    private final DeviceAiConfigMapper aiConfigMapper;
+    private final DeviceAiTargetMapper aiTargetMapper;
+    private final DeviceLogFileMapper logFileMapper;
     private final ObjectMapper objectMapper;
 
     /* ==================== 台账 ==================== */
@@ -141,8 +150,13 @@ public class DeviceService {
         if (children > 0) {
             throw BizException.of("该机场下仍挂载 " + children + " 台无人机,先解绑再删除");
         }
+        String sn = device.getDeviceSn();
         deviceMapper.deleteById(id);
-        osdMapper.delete(Wrappers.<DeviceOsd>lambdaQuery().eq(DeviceOsd::getDeviceSn, device.getDeviceSn()));
+        osdMapper.delete(Wrappers.<DeviceOsd>lambdaQuery().eq(DeviceOsd::getDeviceSn, sn));
+        // 扩展数据随之清理:AI 配置 / 识别记录 / 远程日志
+        aiConfigMapper.delete(Wrappers.<DeviceAiConfig>lambdaQuery().eq(DeviceAiConfig::getDeviceSn, sn));
+        aiTargetMapper.delete(Wrappers.<DeviceAiTarget>lambdaQuery().eq(DeviceAiTarget::getDeviceSn, sn));
+        logFileMapper.delete(Wrappers.<DeviceLogFile>lambdaQuery().eq(DeviceLogFile::getDeviceSn, sn));
     }
 
     /**

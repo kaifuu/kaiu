@@ -426,3 +426,62 @@ videoByStatus, orderByDept, recentIssues, recentOrders, onlineVideos, mapPoints,
 
 `certType`:`CAAC` 民航局 / `UTC` 大疆慧飞 / `AOPA` / `NONE`;
 `status`:`AVAILABLE` 可调度 / `ON_TASK` 执行中 / `LEAVE` 休假 / `DISABLED` 停用。
+
+## 16. 机场扩展能力(上云 API 深度功能)
+
+### 航线库 `/api/waylines`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `` / `/{id}` | 全量列表 / 详情,带 `waypointCount` |
+| POST / PUT `/{id}` / DELETE `/{id}` | | 航点支持 `waypoints` 数组或 `waypointsJson` 字符串 |
+
+`templateTypes`:`WAYPOINT` 航点 / `POI` 兴趣点 / `INSPECT` 巡查拍照 / `STRIP` 航带 / `SOLID` 立体。
+航点结构:`{longitude, latitude, height, speed}`;至少 1 个且经纬度必填。
+
+### 航线任务 `/api/wayline-jobs`(flighttask 三段式)
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/page` | 筛选:`dockSn`、`status`;排序 `sortBy/direction` |
+| GET | `/{id}` | |
+| POST | `` | `{waylineId, dockId, jobType, executeTime}`;`executeTime` 兼容空格或 `T` 分隔 |
+| POST | `/{id}/undo` | 取消(活跃态) |
+| POST | `/{id}/resume` | 断点续飞(FAILED / CANCELED 且有断点) |
+
+编排:`flighttask_prepare` →(立即任务自动 / 定时任务到点)`flighttask_execute` → 设备
+`flighttask_progress` 事件驱动 `SENT→READY→QUEUED→RUNNING→SUCCESS/FAILED/CANCELED`。
+同一机场同时只允许一个活跃任务;下发失败任务行留痕(FAILED + errorMsg)。
+
+### 固件升级 `/api/firmwares` + `/api/firmware-tasks`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET / POST / PUT `/{id}` / DELETE `/{id}` | `/api/firmwares` | 固件库 CRUD |
+| POST | `/api/firmwares/{id}/deploy` | `{deviceIds:[...]}` 批量 OTA(`ota_create`) |
+| GET | `/api/firmware-tasks/page` | 筛选:`deviceSn`、`status` |
+
+任务状态:`SENT/DOWNLOADING/UPGRADING/SUCCESS/FAILED`,进度由 `ota_progress` 事件回填;
+升级成功自动刷新设备台账 `firmwareVersion`;离线设备任务直接 FAILED。
+
+### 远程日志 `/api/devices/{id}/logs`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/logs/sync` | 下发 `logs_file_list`,清单经 services_reply 异步落库 |
+| GET | `/logs` | 该设备日志文件列表 |
+| POST | `/logs/upload` | `{fileIds:[...]}` 批量上传,进度经 `logs_file_upload_progress` 回填 |
+
+文件状态:`FOUND/UPLOADING/UPLOADED/FAILED`;`module`:`DOCK/DRONE`。
+
+### AI 目标识别 `/api/devices/{id}/ai`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/ai/config` | 读配置,未保存过返回默认(不落库) |
+| PUT | `/ai/config` | 保存并经 `property/set` 同步在线设备,返回 `synced` |
+| GET | `/ai/targets/page` | 识别记录,筛选 `type` |
+
+`confidenceMode`:`COUNT` 计数(65%) / `RESCUE` 搜救(50%) / `CUSTOM` 自定义(50-99);
+`filterTypes` 出入参为数组(`PERSON/CAR/BOAT`),库内存 JSON。
+设备侧 `ai_target` 事件落识别记录;删除设备级联清理 AI 配置、识别记录与日志文件。

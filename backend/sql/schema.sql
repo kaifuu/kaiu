@@ -452,6 +452,156 @@ COMMENT ON COLUMN pilot.cert_type        IS 'CAAC 民航局执照 / UTC 大疆�
 COMMENT ON COLUMN pilot.status           IS 'AVAILABLE 可调度 / ON_TASK 执行中 / LEAVE 休假 / DISABLED 停用';
 CREATE INDEX IF NOT EXISTS idx_pilot_status ON pilot (status);
 
+-- ============================ 机场扩展(航线 / 固件 / 远程日志 / AI 识别) ============================
+
+-- ---------------- 航线库(WPML 航线的简化载体:航点序列 + 飞行参数) ----------------
+CREATE TABLE IF NOT EXISTS wayline (
+    id             BIGSERIAL    PRIMARY KEY,
+    code           VARCHAR(32)  NOT NULL,
+    name           VARCHAR(64)  NOT NULL,
+    template_types VARCHAR(24)  NOT NULL DEFAULT 'WAYPOINT',
+    alt            NUMERIC(8, 2)  NOT NULL DEFAULT 80,
+    speed          NUMERIC(8, 2)  NOT NULL DEFAULT 8,
+    waypoints_json TEXT         NOT NULL DEFAULT '[]',
+    remark         VARCHAR(500),
+    create_time    TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time    TIMESTAMP,
+    CONSTRAINT uk_wayline_code UNIQUE (code),
+    CONSTRAINT ck_wayline_tpl CHECK (template_types IN ('WAYPOINT', 'POI', 'INSPECT', 'STRIP', 'SOLID'))
+);
+COMMENT ON TABLE  wayline                 IS '航线库:大疆 WPML 航线的平台侧管理单元';
+COMMENT ON COLUMN wayline.template_types  IS 'WAYPOINT 航点 / POI 兴趣点 / INSPECT 巡检 / STRIP 航带 / SOLID 立体';
+COMMENT ON COLUMN wayline.waypoints_json  IS '航点数组 JSON:[{longitude,latitude,height,speed}]';
+COMMENT ON COLUMN wayline.alt             IS '默认航线高度 m';
+
+-- ---------------- 航线飞行任务(flighttask) ----------------
+CREATE TABLE IF NOT EXISTS wayline_job (
+    id              BIGSERIAL    PRIMARY KEY,
+    flight_id       VARCHAR(64)  NOT NULL,
+    prepare_tid     VARCHAR(64),
+    dock_sn         VARCHAR(64)  NOT NULL,
+    drone_sn        VARCHAR(64),
+    wayline_id      BIGINT,
+    wayline_name    VARCHAR(64),
+    job_type        VARCHAR(16)  NOT NULL DEFAULT 'IMMEDIATE',
+    execute_time    TIMESTAMP,
+    status          VARCHAR(16)  NOT NULL DEFAULT 'SENT',
+    progress        INTEGER      NOT NULL DEFAULT 0,
+    current_step    INTEGER,
+    breakpoint_json TEXT,
+    media_count     INTEGER      NOT NULL DEFAULT 0,
+    error_msg       VARCHAR(255),
+    dispatched_at   TIMESTAMP,
+    begin_at        TIMESTAMP,
+    end_at          TIMESTAMP,
+    create_time     TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time     TIMESTAMP,
+    CONSTRAINT uk_wayline_job_flight UNIQUE (flight_id),
+    CONSTRAINT ck_wayline_job_type   CHECK (job_type IN ('IMMEDIATE', 'TIMED')),
+    CONSTRAINT ck_wayline_job_status CHECK (status IN ('SENT', 'READY', 'QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELED'))
+);
+COMMENT ON TABLE  wayline_job            IS '航线飞行任务:云端经 flighttask_prepare / execute 下发,进度由 flighttask_progress 事件驱动';
+COMMENT ON COLUMN wayline_job.flight_id  IS '任务事务 id,云端生成,设备进度上报时带回';
+COMMENT ON COLUMN wayline_job.status     IS 'SENT 已下发 / READY 机场就绪(定时待执行) / QUEUED 已入队 / RUNNING 执行中 / SUCCESS 成功 / FAILED 失败 / CANCELED 已取消';
+COMMENT ON COLUMN wayline_job.breakpoint_json IS '断点信息 JSON:{index,progress,remain_margin};失败/取消后可断点续飞';
+CREATE INDEX IF NOT EXISTS idx_wayline_job_dock   ON wayline_job (dock_sn, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_wayline_job_status ON wayline_job (status);
+
+-- ---------------- 固件库 ----------------
+CREATE TABLE IF NOT EXISTS firmware (
+    id           BIGSERIAL    PRIMARY KEY,
+    product_type VARCHAR(16)  NOT NULL,
+    device_model VARCHAR(64),
+    version      VARCHAR(32)  NOT NULL,
+    file_name    VARCHAR(128),
+    file_size    BIGINT,
+    file_md5     VARCHAR(64),
+    file_url     VARCHAR(500),
+    remark       VARCHAR(500),
+    create_time  TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time  TIMESTAMP,
+    CONSTRAINT ck_firmware_type CHECK (product_type IN ('DOCK', 'DRONE'))
+);
+COMMENT ON TABLE  firmware             IS '固件库:机场 / 飞行器 OTA 升级包';
+COMMENT ON COLUMN firmware.product_type IS 'DOCK 机场固件 / DRONE 飞行器固件';
+
+-- ---------------- 固件升级任务 ----------------
+CREATE TABLE IF NOT EXISTS firmware_task (
+    id               BIGSERIAL    PRIMARY KEY,
+    firmware_id      BIGINT       NOT NULL,
+    firmware_version VARCHAR(32),
+    device_sn        VARCHAR(64)  NOT NULL,
+    device_name      VARCHAR(64),
+    status           VARCHAR(16)  NOT NULL DEFAULT 'SENT',
+    progress         INTEGER      NOT NULL DEFAULT 0,
+    message          VARCHAR(255),
+    finished_at      TIMESTAMP,
+    create_time      TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time      TIMESTAMP,
+    CONSTRAINT ck_fw_task_status CHECK (status IN ('SENT', 'DOWNLOADING', 'UPGRADING', 'SUCCESS', 'FAILED'))
+);
+COMMENT ON TABLE  firmware_task        IS '固件升级任务:云端 ota_create 下发,ota_progress 事件驱动进度';
+COMMENT ON COLUMN firmware_task.status IS 'SENT 已下发 / DOWNLOADING 下载中 / UPGRADING 升级中 / SUCCESS 成功 / FAILED 失败';
+CREATE INDEX IF NOT EXISTS idx_fw_task_device ON firmware_task (device_sn, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_fw_task_status ON firmware_task (status);
+
+-- ---------------- 远程日志文件 ----------------
+CREATE TABLE IF NOT EXISTS device_log_file (
+    id          BIGSERIAL    PRIMARY KEY,
+    device_sn   VARCHAR(64)  NOT NULL,
+    file_id     VARCHAR(64)  NOT NULL,
+    name        VARCHAR(255),
+    module      VARCHAR(16),
+    size        BIGINT,
+    file_time   TIMESTAMP,
+    status      VARCHAR(16)  NOT NULL DEFAULT 'FOUND',
+    percent     INTEGER      NOT NULL DEFAULT 0,
+    object_key  VARCHAR(500),
+    create_time TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP,
+    CONSTRAINT uk_device_log_file UNIQUE (device_sn, file_id),
+    CONSTRAINT ck_log_file_status CHECK (status IN ('FOUND', 'UPLOADING', 'UPLOADED', 'FAILED')),
+    CONSTRAINT ck_log_file_module CHECK (module IS NULL OR module IN ('DOCK', 'DRONE'))
+);
+COMMENT ON TABLE  device_log_file        IS '远程日志文件:logs_file_list 拉取,logs_file_upload 上传';
+COMMENT ON COLUMN device_log_file.status IS 'FOUND 已发现待上传 / UPLOADING 上传中 / UPLOADED 已上传 / FAILED 上传失败';
+COMMENT ON COLUMN device_log_file.module IS '日志归属:DOCK 机场本体 / DRONE 挂载飞行器';
+
+-- ---------------- AI 目标识别配置(property/set 下发到机场) ----------------
+CREATE TABLE IF NOT EXISTS device_ai_config (
+    id                BIGSERIAL    PRIMARY KEY,
+    device_sn         VARCHAR(64)  NOT NULL,
+    enabled           BOOLEAN      NOT NULL DEFAULT FALSE,
+    follow_enabled    BOOLEAN      NOT NULL DEFAULT FALSE,
+    model             VARCHAR(64),
+    confidence_mode   VARCHAR(16)  NOT NULL DEFAULT 'CUSTOM',
+    confidence_value  INTEGER      NOT NULL DEFAULT 80,
+    filter_types_json TEXT         NOT NULL DEFAULT '["PERSON","CAR","BOAT"]',
+    create_time       TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time       TIMESTAMP,
+    CONSTRAINT uk_device_ai_config UNIQUE (device_sn),
+    CONSTRAINT ck_ai_conf_mode CHECK (confidence_mode IN ('COUNT', 'RESCUE', 'CUSTOM'))
+);
+COMMENT ON TABLE  device_ai_config               IS '机场 AI 目标识别配置:识别开关 / 跟随 / 置信度模式 / 目标过滤';
+COMMENT ON COLUMN device_ai_config.confidence_mode IS 'COUNT 计数模式 / RESCUE 搜救模式 / CUSTOM 自定义';
+
+-- ---------------- AI 识别目标记录 ----------------
+CREATE TABLE IF NOT EXISTS device_ai_target (
+    id          BIGSERIAL     PRIMARY KEY,
+    device_sn   VARCHAR(64)   NOT NULL,
+    target_type VARCHAR(16)   NOT NULL,
+    confidence  INTEGER,
+    longitude   NUMERIC(10, 6),
+    latitude    NUMERIC(10, 6),
+    event_time  TIMESTAMP,
+    create_time TIMESTAMP     NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP,
+    CONSTRAINT ck_ai_target_type CHECK (target_type IN ('PERSON', 'CAR', 'BOAT'))
+);
+COMMENT ON TABLE device_ai_target            IS 'AI 目标识别记录:设备识别事件流';
+COMMENT ON COLUMN device_ai_target.target_type IS 'PERSON 人员 / CAR 车辆 / BOAT 船只';
+CREATE INDEX IF NOT EXISTS idx_ai_target_sn ON device_ai_target (device_sn, event_time DESC);
+
 -- ---------------- 视频通道:机场/无人机的实时画面 ----------------
 CREATE TABLE IF NOT EXISTS video_channel (
     id            BIGSERIAL    PRIMARY KEY,

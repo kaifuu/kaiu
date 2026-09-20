@@ -51,6 +51,20 @@ public record DjiMessage(String tid, String bid, Long timestamp, String method, 
         return root.toString();
     }
 
+    /**
+     * 构造属性设置报文(property/set)。
+     * 与服务调用不同,属性设置没有 method 字段,data 即为要写入的属性集合
+     * (如 AI 识别配置:{ai_switch, ai_follow_switch, ...})。
+     */
+    public static String buildProperty(String tid, Object data) {
+        ObjectNode root = MAPPER.createObjectNode();
+        root.put("tid", tid);
+        root.put("bid", UUID.randomUUID().toString());
+        root.put("timestamp", System.currentTimeMillis());
+        root.set("data", MAPPER.valueToTree(data == null ? MAPPER.createObjectNode() : data));
+        return root.toString();
+    }
+
     /** 设备回复里的业务返回码:0 表示成功 */
     public Integer resultCode() {
         if (data == null || !data.hasNonNull("result")) {

@@ -1,6 +1,6 @@
 <template>
   <div class="login-page">
-    <!-- ===== 背景:亮蓝渐变 + 光晕 + 网格 ===== -->
+    <!-- ===== 背景:亮蓝渐变 + 光晕 ===== -->
     <div class="bg-grad"></div>
     <div class="glow glow-1"></div>
     <div class="glow glow-2"></div>
@@ -8,130 +8,304 @@
     <div class="grid-bg"></div>
     <div class="vignette"></div>
 
-    <!-- ===== 场景层:3D 城市 / 山地 / 河川,自动轮播 ===== -->
-    <div class="scene-layer">
-      <!-- ① 3D 等距城市 -->
-      <svg class="scene" :class="{ active: scene === 0 }" :viewBox="CITY_VIEWBOX"
-           preserveAspectRatio="xMidYMax slice" fill="none">
-        <g fill="rgba(255,255,255,.26)"><path :d="CITY_FACES.right" /></g>
-        <g fill="rgba(255,255,255,.46)"><path :d="CITY_FACES.left" /></g>
-        <g fill="rgba(255,255,255,.88)"><path :d="CITY_FACES.top" /></g>
-      </svg>
+    <!-- ===== 透视网格地面(向远处延伸,缓慢流动) ===== -->
+    <div class="floor-wrap"><div class="floor"></div></div>
+    <i class="horizon"></i>
 
-      <!-- ② 山地 -->
-      <svg class="scene" :class="{ active: scene === 1 }" viewBox="0 0 940 620"
-           preserveAspectRatio="xMidYMax slice" fill="none">
-        <path d="M0 392 Q 118 296, 222 356 Q 332 246, 462 336 Q 562 266, 682 346 Q 802 276, 940 356 L940 620 L0 620 Z"
-              fill="rgba(255,255,255,.15)"/>
-        <path d="M0 452 Q 140 372, 262 424 Q 402 332, 542 414 Q 662 352, 782 424 Q 872 384, 940 424 L940 620 L0 620 Z"
-              fill="rgba(255,255,255,.27)"/>
-        <path d="M0 518 Q 162 458, 302 500 Q 442 428, 602 490 Q 742 450, 862 500 Q 912 480, 940 496 L940 620 L0 620 Z"
-              fill="rgba(255,255,255,.44)"/>
-        <!-- 山脊林带 -->
-        <g fill="rgba(255,255,255,.62)">
-          <path d="M96 500 l-9 24 h18 Z"/><path d="M126 506 l-8 22 h16 Z"/>
-          <path d="M336 486 l-9 24 h18 Z"/><path d="M366 492 l-8 22 h16 Z"/>
-          <path d="M646 480 l-9 24 h18 Z"/><path d="M676 486 l-8 22 h16 Z"/>
-          <path d="M836 490 l-8 22 h16 Z"/>
+    <!-- ===== 地面线稿:远山 + 河流 + 输水管线/排污口 + 树木 + AI 识别目标 ===== -->
+    <svg class="ground" viewBox="0 0 1920 900" preserveAspectRatio="xMidYMax slice" fill="none">
+      <defs>
+        <g id="pine" stroke="rgba(255,255,255,.55)" stroke-width="2" fill="rgba(255,255,255,.15)" stroke-linejoin="round">
+          <path d="M0 -16 L-11 6 H11 Z" />
+          <path d="M0 -4 L-14 22 H14 Z" />
+          <path d="M0 22 V32" fill="none" />
         </g>
-      </svg>
+      </defs>
 
-      <!-- ③ 河川 -->
-      <svg class="scene" :class="{ active: scene === 2 }" viewBox="0 0 940 620"
-           preserveAspectRatio="xMidYMax slice" fill="none">
-        <path d="M0 376 Q 200 344, 400 370 T 940 360 L940 620 L0 620 Z" fill="rgba(255,255,255,.14)"/>
-        <path d="M0 436 Q 240 396, 480 426 T 940 416 L940 620 L0 620 Z" fill="rgba(255,255,255,.26)"/>
-        <!-- 水纹:两组反向漂移,叠出流动感 -->
-        <g stroke="rgba(255,255,255,.45)" stroke-width="2" fill="none" stroke-linecap="round">
-          <animateTransform attributeName="transform" type="translate" values="0 0; 52 0; 0 0" dur="9s" repeatCount="indefinite"/>
-          <path d="M60 476 q 32 -11, 64 0 t 64 0"/>
-          <path d="M420 500 q 32 -11, 64 0 t 64 0"/>
-          <path d="M760 470 q 32 -11, 64 0 t 64 0"/>
-          <path d="M200 540 q 32 -11, 64 0 t 64 0"/>
-          <path d="M640 556 q 32 -11, 64 0 t 64 0"/>
+      <!-- 远山剪影 -->
+      <path d="M-20 400 L120 348 L240 382 L380 328 L540 384 L660 342 L820 386 L960 334 L1120 382 L1260 340 L1420 384 L1560 342 L1720 386 L1940 350 V400 H-20 Z"
+            fill="rgba(255,255,255,.11)" />
+      <path d="M-20 400 L180 370 L320 392 L470 362 L630 394 L790 368 L950 394 L1110 364 L1280 392 L1440 366 L1610 392 L1780 368 L1940 388 V400 H-20 Z"
+            fill="rgba(255,255,255,.07)" />
+
+      <!-- 河流:岸带 + 水面 + 两组反向流动纹 -->
+      <path d="M-40 560 C 240 505, 430 600, 700 570 C 950 542, 1130 655, 1390 615 C 1570 588, 1770 640, 1960 605"
+            stroke="rgba(255,255,255,.14)" stroke-width="76" stroke-linecap="round" />
+      <path d="M-40 560 C 240 505, 430 600, 700 570 C 950 542, 1130 655, 1390 615 C 1570 588, 1770 640, 1960 605"
+            stroke="rgba(255,255,255,.22)" stroke-width="52" />
+      <path class="river-flow" d="M-40 560 C 240 505, 430 600, 700 570 C 950 542, 1130 655, 1390 615 C 1570 588, 1770 640, 1960 605"
+            stroke="rgba(255,255,255,.5)" stroke-width="2.4" stroke-dasharray="30 26" />
+      <path class="river-flow2" d="M-40 572 C 240 517, 430 612, 700 582 C 950 554, 1130 667, 1390 627 C 1570 600, 1770 652, 1960 617"
+            stroke="rgba(255,255,255,.32)" stroke-width="1.6" stroke-dasharray="16 34" />
+
+      <!-- 地面等高线 -->
+      <path d="M80 705 Q 520 645, 980 695" stroke="rgba(255,255,255,.13)" stroke-width="1.5" stroke-dasharray="5 11" />
+      <path d="M320 795 Q 860 730, 1540 790" stroke="rgba(255,255,255,.1)" stroke-width="1.5" stroke-dasharray="5 11" />
+
+      <!-- 岸边道路 -->
+      <path d="M330 726 Q 470 708, 640 700" stroke="rgba(255,255,255,.16)" stroke-width="20" />
+      <path d="M330 726 Q 470 708, 640 700" stroke="rgba(255,255,255,.3)" stroke-width="1.4" stroke-dasharray="18 16" />
+
+      <!-- 输水管线 + 支墩 + 阀门 + 排污口 -->
+      <g>
+        <path d="M1150 508 H1960" stroke="rgba(255,255,255,.5)" stroke-width="4.5" />
+        <g stroke="rgba(255,255,255,.38)" stroke-width="2.5">
+          <path d="M1236 510 V530" /><path d="M1356 510 V530" /><path d="M1476 510 V530" />
+          <path d="M1596 510 V530" /><path d="M1716 510 V530" /><path d="M1836 510 V530" />
         </g>
-        <g stroke="rgba(255,255,255,.28)" stroke-width="1.6" fill="none" stroke-linecap="round">
-          <animateTransform attributeName="transform" type="translate" values="0 0; -44 0; 0 0" dur="12s" repeatCount="indefinite"/>
-          <path d="M300 462 q 26 -9, 52 0 t 52 0"/>
-          <path d="M620 486 q 26 -9, 52 0 t 52 0"/>
-          <path d="M100 520 q 26 -9, 52 0 t 52 0"/>
-          <path d="M500 534 q 26 -9, 52 0 t 52 0"/>
+        <g stroke="rgba(255,255,255,.6)" stroke-width="2.2">
+          <circle cx="1300" cy="508" r="9" />
+          <path d="M1293 501 L1307 515 M1307 501 L1293 515" />
         </g>
-        <path d="M0 548 Q 260 516, 520 542 T 940 530 L940 620 L0 620 Z" fill="rgba(255,255,255,.42)"/>
-        <!-- 河岸林带 -->
-        <g fill="rgba(255,255,255,.6)">
-          <path d="M180 540 l-9 24 h18 Z"/><path d="M210 546 l-8 22 h16 Z"/>
-          <path d="M760 522 l-9 24 h18 Z"/><path d="M790 528 l-8 22 h16 Z"/>
+        <rect x="1284" y="540" width="26" height="13" rx="2.5" stroke="rgba(255,255,255,.6)" stroke-width="2" fill="rgba(255,255,255,.18)" />
+        <g stroke="rgba(255,255,255,.5)" stroke-width="1.8" stroke-linecap="round">
+          <path class="of1" d="M1316 546 q 12 -5 24 0" />
+          <path class="of2" d="M1316 551 q 12 -4 24 0" />
+          <path class="of3" d="M1316 556 q 12 -3 24 0" />
         </g>
-      </svg>
+      </g>
+
+      <!-- 岸线树木 -->
+      <use href="#pine" transform="translate(300,520)" />
+      <use href="#pine" transform="translate(345,534) scale(.8)" />
+      <use href="#pine" transform="translate(568,568)" />
+      <use href="#pine" transform="translate(872,632) scale(1.1)" />
+      <use href="#pine" transform="translate(910,646) scale(.85)" />
+      <use href="#pine" transform="translate(1185,690) scale(1.05)" />
+      <use href="#pine" transform="translate(1224,702) scale(.8)" />
+      <use href="#pine" transform="translate(1620,560) scale(.9)" />
+      <use href="#pine" transform="translate(1662,574) scale(.7)" />
+
+      <!-- ① 河边小船(green 识别框) -->
+      <g class="tgt" style="animation-delay:-3.9s">
+        <g stroke="#ffffff" stroke-width="2.4" fill="rgba(255,255,255,.16)" stroke-linejoin="round">
+          <path d="M703 578 Q735 594 767 578 L758 566 H712 Z" />
+          <rect x="726" y="556" width="18" height="10" rx="2" />
+          <path d="M735 556 V544" fill="none" />
+        </g>
+        <rect x="675" y="536" width="120" height="62" stroke="rgba(74,222,128,.4)" stroke-width="1" stroke-dasharray="7 6" />
+        <g stroke="#4ade80" stroke-width="2.5" fill="none">
+          <path d="M675 552 V536 H691" /><path d="M779 536 H795 V552" />
+          <path d="M675 582 V598 H691" /><path d="M779 598 H795 V582" />
+        </g>
+        <path d="M735 536 V522" stroke="rgba(74,222,128,.7)" stroke-width="1.5" />
+        <rect x="683" y="496" width="104" height="26" rx="3" fill="rgba(4,30,66,.66)" stroke="rgba(74,222,128,.55)" stroke-width="1" />
+        <text x="735" y="514" text-anchor="middle" font-size="15" font-weight="600" letter-spacing="2" fill="#eafff2"><tspan class="tc" style="animation-delay:-3.25s">船</tspan><tspan class="tc" style="animation-delay:-3.09s">只</tspan><tspan> </tspan><tspan class="tc" style="animation-delay:-2.93s">9</tspan><tspan class="tc" style="animation-delay:-2.77s">6</tspan><tspan class="tc" style="animation-delay:-2.61s">%</tspan></text>
+        <circle cx="735" cy="570" r="2.5" fill="#4ade80">
+          <animate attributeName="opacity" values="1;.2;1" dur="1.6s" repeatCount="indefinite" />
+        </circle>
+      </g>
+
+      <!-- ② 岸边人员(cyan 识别框) -->
+      <g class="tgt" style="animation-delay:-7.3s">
+        <g stroke="#ffffff" stroke-width="2.6" fill="none" stroke-linecap="round">
+          <circle cx="1010" cy="622" r="6.5" fill="rgba(255,255,255,.16)" />
+          <path d="M1010 629 V656" />
+          <path d="M1010 636 L997 649 M1010 636 L1023 646" />
+          <path d="M1010 656 L1000 675 M1010 656 L1020 675" />
+        </g>
+        <rect x="966" y="606" width="88" height="80" stroke="rgba(34,211,238,.4)" stroke-width="1" stroke-dasharray="7 6" />
+        <g stroke="#22d3ee" stroke-width="2.5" fill="none">
+          <path d="M966 622 V606 H982" /><path d="M1038 606 H1054 V622" />
+          <path d="M966 670 V686 H982" /><path d="M1038 686 H1054 V670" />
+        </g>
+        <path d="M1010 606 V592" stroke="rgba(34,211,238,.7)" stroke-width="1.5" />
+        <rect x="962" y="562" width="96" height="26" rx="3" fill="rgba(4,30,66,.66)" stroke="rgba(34,211,238,.55)" stroke-width="1" />
+        <text x="1010" y="580" text-anchor="middle" font-size="15" font-weight="600" letter-spacing="2" fill="#e6feff"><tspan class="tc" style="animation-delay:-6.65s">人</tspan><tspan class="tc" style="animation-delay:-6.49s">员</tspan><tspan> </tspan><tspan class="tc" style="animation-delay:-6.33s">9</tspan><tspan class="tc" style="animation-delay:-6.17s">2</tspan><tspan class="tc" style="animation-delay:-6.01s">%</tspan></text>
+        <circle cx="1010" cy="646" r="2.5" fill="#22d3ee">
+          <animate attributeName="opacity" values="1;.2;1" dur="1.9s" repeatCount="indefinite" />
+        </circle>
+      </g>
+
+      <!-- ③ 路边车辆(green 识别框) -->
+      <g class="tgt" style="animation-delay:-.5s">
+        <g stroke="#ffffff" stroke-width="2.4" fill="rgba(255,255,255,.16)" stroke-linejoin="round">
+          <rect x="436" y="676" width="52" height="26" rx="3" />
+          <path d="M488 702 V684 Q488 678 494 678 H506 L516 690 V702 Z" />
+          <path d="M492 684 H504 L511 692 H492 Z" fill="rgba(24,119,230,.35)" stroke-width="1.5" />
+          <circle cx="452" cy="704" r="7" fill="none" />
+          <circle cx="504" cy="704" r="7" fill="none" />
+        </g>
+        <rect x="395" y="660" width="150" height="64" stroke="rgba(74,222,128,.4)" stroke-width="1" stroke-dasharray="7 6" />
+        <g stroke="#4ade80" stroke-width="2.5" fill="none">
+          <path d="M395 676 V660 H411" /><path d="M529 660 H545 V676" />
+          <path d="M395 708 V724 H411" /><path d="M529 724 H545 V708" />
+        </g>
+        <path d="M470 660 V646" stroke="rgba(74,222,128,.7)" stroke-width="1.5" />
+        <rect x="418" y="620" width="104" height="26" rx="3" fill="rgba(4,30,66,.66)" stroke="rgba(74,222,128,.55)" stroke-width="1" />
+        <text x="470" y="638" text-anchor="middle" font-size="15" font-weight="600" letter-spacing="2" fill="#eafff2"><tspan class="tc" style="animation-delay:.15s">车</tspan><tspan class="tc" style="animation-delay:.31s">辆</tspan><tspan> </tspan><tspan class="tc" style="animation-delay:.47s">9</tspan><tspan class="tc" style="animation-delay:.63s">4</tspan><tspan class="tc" style="animation-delay:.79s">%</tspan></text>
+        <circle cx="470" cy="692" r="2.5" fill="#4ade80">
+          <animate attributeName="opacity" values="1;.2;1" dur="1.4s" repeatCount="indefinite" />
+        </circle>
+      </g>
+    </svg>
+
+    <!-- ===== 雷达:同心环 + 匀速扫描扇 + 扫过亮点 ===== -->
+    <svg class="radar" viewBox="0 0 220 220" fill="none">
+      <circle cx="110" cy="110" r="96" stroke="rgba(255,255,255,.3)" stroke-width="3" stroke-dasharray="1.5 24" />
+      <circle cx="110" cy="110" r="88" stroke="rgba(255,255,255,.32)" stroke-width="1.3" />
+      <circle cx="110" cy="110" r="60" stroke="rgba(255,255,255,.24)" stroke-width="1.2" />
+      <circle cx="110" cy="110" r="32" stroke="rgba(255,255,255,.18)" stroke-width="1.2" />
+      <path d="M110 14 V206 M14 110 H206" stroke="rgba(255,255,255,.1)" stroke-width="1" />
+      <g>
+        <animateTransform attributeName="transform" type="rotate" from="0 110 110" to="360 110 110" dur="5.5s" repeatCount="indefinite" />
+        <path d="M110 110 L110 22 A88 88 0 0 1 186.2 66 Z" fill="rgba(255,255,255,.09)" />
+        <path d="M110 110 L110 22 A88 88 0 0 1 147.2 30.2 Z" fill="rgba(255,255,255,.16)" />
+        <path d="M110 110 L110 22" stroke="rgba(255,255,255,.8)" stroke-width="1.8" />
+      </g>
+      <circle cx="165" cy="70" r="3" fill="#cfeaff">
+        <animate attributeName="opacity" values="0;0;1;.25;0" keyTimes="0;.86;.9;.96;1" dur="5.5s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="70" cy="152" r="3" fill="#4ade80">
+        <animate attributeName="opacity" values="0;0;1;.25;0" keyTimes="0;.35;.4;.75;1" dur="5.5s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="110" cy="110" r="3.2" fill="#ffffff" />
+    </svg>
+
+    <!-- ===== 无人机作业机组:整机缓慢横移 + 下视光锥 + 地面高亮 + 准星 ===== -->
+    <div class="drone-rig">
+      <div class="scan-cone"></div>
+      <div class="scan-glow"></div>
+      <div class="reticle"><i class="rr"></i><i class="rch"></i><i class="rcv"></i></div>
+
+      <div class="drone">
+        <div class="drone-bob">
+          <svg viewBox="0 88 560 300" fill="none">
+            <defs>
+              <linearGradient id="dBody" x1="0" y1="0" x2=".5" y2="1">
+                <stop offset="0" stop-color="#ffffff" /><stop offset="1" stop-color="#c5e0fb" />
+              </linearGradient>
+              <radialGradient id="dDisc" cx=".5" cy=".5" r=".5">
+                <stop offset="0" stop-color="rgba(255,255,255,.5)" /><stop offset="1" stop-color="rgba(255,255,255,0)" />
+              </radialGradient>
+            </defs>
+
+            <!-- 后旋翼(远,转速各异) -->
+            <g>
+              <rect x="158" y="150" width="24" height="13" rx="4" fill="url(#dBody)" stroke="#ffffff" stroke-width="1.5" />
+              <circle cx="170" cy="150" r="42" stroke="rgba(255,255,255,.35)" stroke-width="1.5" />
+              <circle cx="170" cy="150" r="37" fill="url(#dDisc)" />
+              <g opacity=".92">
+                <animateTransform attributeName="transform" type="rotate" from="0 170 150" to="360 170 150" dur=".46s" repeatCount="indefinite" />
+                <path d="M132 152 Q170 141 208 152" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+                <path d="M172 112 Q160 150 172 188" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity=".4" />
+              </g>
+              <circle cx="170" cy="150" r="6" fill="#eef6ff" stroke="#ffffff" stroke-width="1.5" />
+            </g>
+            <g>
+              <rect x="378" y="150" width="24" height="13" rx="4" fill="url(#dBody)" stroke="#ffffff" stroke-width="1.5" />
+              <circle cx="390" cy="150" r="42" stroke="rgba(255,255,255,.35)" stroke-width="1.5" />
+              <circle cx="390" cy="150" r="37" fill="url(#dDisc)" />
+              <g opacity=".92">
+                <animateTransform attributeName="transform" type="rotate" from="0 390 150" to="360 390 150" dur=".54s" repeatCount="indefinite" />
+                <path d="M352 152 Q390 141 428 152" stroke="#ffffff" stroke-width="4" stroke-linecap="round" />
+                <path d="M392 112 Q380 150 392 188" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity=".4" />
+              </g>
+              <circle cx="390" cy="150" r="6" fill="#eef6ff" stroke="#ffffff" stroke-width="1.5" />
+            </g>
+
+            <!-- 细机臂(双层描边) -->
+            <g stroke-linecap="round">
+              <path d="M244 216 C216 198,196 180,182 163" stroke="rgba(255,255,255,.5)" stroke-width="9" />
+              <path d="M244 216 C216 198,196 180,182 163" stroke="#ffffff" stroke-width="3" />
+              <path d="M316 216 C344 198,364 180,378 163" stroke="rgba(255,255,255,.5)" stroke-width="9" />
+              <path d="M316 216 C344 198,364 180,378 163" stroke="#ffffff" stroke-width="3" />
+              <path d="M216 262 C184 274,148 290,122 306" stroke="rgba(255,255,255,.5)" stroke-width="10" />
+              <path d="M216 262 C184 274,148 290,122 306" stroke="#ffffff" stroke-width="3.4" />
+              <path d="M344 262 C376 274,412 290,438 306" stroke="rgba(255,255,255,.5)" stroke-width="10" />
+              <path d="M344 262 C376 274,412 290,438 306" stroke="#ffffff" stroke-width="3.4" />
+            </g>
+
+            <!-- 起落架 -->
+            <g stroke-linecap="round" fill="none">
+              <path d="M230 296 C218 318,208 336,202 352" stroke="rgba(255,255,255,.85)" stroke-width="6" />
+              <path d="M188 354 H216" stroke="#ffffff" stroke-width="6" />
+              <path d="M330 296 C342 318,352 336,358 352" stroke="rgba(255,255,255,.85)" stroke-width="6" />
+              <path d="M344 354 H372" stroke="#ffffff" stroke-width="6" />
+            </g>
+
+            <!-- 机身:渐变 + 座舱面板 + 天线 -->
+            <path d="M240 199 Q280 172 320 199 Z" fill="url(#dBody)" stroke="#ffffff" stroke-width="2" />
+            <rect x="204" y="196" width="152" height="104" rx="26" fill="url(#dBody)" stroke="#ffffff" stroke-width="2.5" />
+            <rect x="228" y="220" width="104" height="42" rx="10" fill="rgba(24,119,230,.07)" stroke="rgba(24,119,230,.22)" stroke-width="1.5" />
+            <g stroke="rgba(24,119,230,.3)" stroke-width="2.2" stroke-linecap="round">
+              <path d="M212 232 H224" /><path d="M212 241 H224" />
+              <path d="M336 232 H348" /><path d="M336 241 H348" />
+            </g>
+            <circle cx="280" cy="241" r="13" fill="#0b3f8f" stroke="#7dd3fc" stroke-width="2" />
+            <circle cx="280" cy="241" r="5.5" fill="#38bdf8" />
+            <circle cx="276.5" cy="237.5" r="1.8" fill="#ffffff" />
+            <path d="M280 174 V158" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" />
+            <circle cx="280" cy="154" r="3" fill="#22d3ee">
+              <animate attributeName="opacity" values="1;.25;1" dur="2.2s" repeatCount="indefinite" />
+            </circle>
+
+            <!-- 下视传感器 + 双轴云台相机 -->
+            <circle cx="280" cy="292" r="10" fill="#0b3f8f" stroke="#7dd3fc" stroke-width="2" />
+            <rect x="272" y="300" width="16" height="12" rx="3" fill="#dcebff" stroke="#ffffff" stroke-width="1.6" />
+            <rect x="258" y="310" width="44" height="28" rx="9" fill="url(#dBody)" stroke="#ffffff" stroke-width="2" />
+            <circle cx="280" cy="324" r="9.5" fill="#0b3f8f" stroke="#7dd3fc" stroke-width="2" />
+            <circle cx="280" cy="324" r="4" fill="#38bdf8" />
+            <circle cx="277" cy="321" r="1.6" fill="#ffffff" />
+
+            <!-- 前旋翼(近) -->
+            <g>
+              <rect x="94" y="312" width="28" height="15" rx="5" fill="url(#dBody)" stroke="#ffffff" stroke-width="1.6" />
+              <circle cx="108" cy="312" r="52" stroke="rgba(255,255,255,.38)" stroke-width="1.6" />
+              <circle cx="108" cy="312" r="46" fill="url(#dDisc)" />
+              <g opacity=".95">
+                <animateTransform attributeName="transform" type="rotate" from="0 108 312" to="360 108 312" dur=".58s" repeatCount="indefinite" />
+                <path d="M62 314 Q108 302 154 314" stroke="#ffffff" stroke-width="4.6" stroke-linecap="round" />
+                <path d="M110 266 Q97 312 110 358" stroke="#ffffff" stroke-width="4.6" stroke-linecap="round" opacity=".4" />
+              </g>
+              <circle cx="108" cy="312" r="7.5" fill="#eef6ff" stroke="#ffffff" stroke-width="1.6" />
+            </g>
+            <g>
+              <rect x="438" y="312" width="28" height="15" rx="5" fill="url(#dBody)" stroke="#ffffff" stroke-width="1.6" />
+              <circle cx="452" cy="312" r="52" stroke="rgba(255,255,255,.38)" stroke-width="1.6" />
+              <circle cx="452" cy="312" r="46" fill="url(#dDisc)" />
+              <g opacity=".95">
+                <animateTransform attributeName="transform" type="rotate" from="0 452 312" to="360 452 312" dur=".5s" repeatCount="indefinite" />
+                <path d="M406 314 Q452 302 498 314" stroke="#ffffff" stroke-width="4.6" stroke-linecap="round" />
+                <path d="M454 266 Q441 312 454 358" stroke="#ffffff" stroke-width="4.6" stroke-linecap="round" opacity=".4" />
+              </g>
+              <circle cx="452" cy="312" r="7.5" fill="#eef6ff" stroke="#ffffff" stroke-width="1.6" />
+            </g>
+
+            <!-- 状态灯 -->
+            <circle cx="152" cy="286" r="4" fill="#4ade80">
+              <animate attributeName="opacity" values="1;.2;1" dur="2.4s" repeatCount="indefinite" />
+            </circle>
+            <circle cx="408" cy="286" r="4" fill="#4ade80">
+              <animate attributeName="opacity" values=".2;1;.2" dur="3.1s" repeatCount="indefinite" />
+            </circle>
+            <circle cx="334" cy="206" r="3.5" fill="#22d3ee">
+              <animate attributeName="opacity" values="1;.3;1" dur="1.8s" repeatCount="indefinite" />
+            </circle>
+          </svg>
+        </div>
+      </div>
     </div>
 
-    <!-- 场景指示 -->
-    <div class="scene-dots">
-      <span v-for="(s, idx) in SCENE_NAMES" :key="s" class="dot"
-            :class="{ on: scene === idx }" @click="scene = idx">{{ s }}</span>
+    <!-- ===== 回传数据粒子:地面向无人机缓慢上升 ===== -->
+    <div class="particles">
+      <span class="pl" style="left:41%;--d:9s;--dl:-1.5s"><i></i></span>
+      <span class="pl" style="left:44.5%;--d:8s;--dl:-4.2s"><i></i></span>
+      <span class="pl" style="left:47.8%;--d:10.5s;--dl:-2.8s"><i></i></span>
+      <span class="pl" style="left:51.4%;--d:7.5s;--dl:-6s"><i></i></span>
+      <span class="pl" style="left:54.8%;--d:9.5s;--dl:-.5s"><i></i></span>
+      <span class="pl" style="left:57.6%;--d:8.5s;--dl:-3.6s"><i></i></span>
+      <span class="pl" style="left:43%;--d:11s;--dl:-7.4s"><i></i></span>
     </div>
 
-    <!-- ===== 飞行中的巡检无人机 ===== -->
-    <div class="drone">
-      <div class="drone-bob">
-        <svg viewBox="0 0 240 200" fill="none">
-          <defs>
-            <linearGradient id="dBody" x1="0" y1="0" x2=".6" y2="1">
-              <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfe6ff"/>
-            </linearGradient>
-            <radialGradient id="dRotor" cx=".5" cy=".5" r=".5">
-              <stop offset="0" stop-color="rgba(255,255,255,.55)"/>
-              <stop offset="1" stop-color="rgba(255,255,255,0)"/>
-            </radialGradient>
-          </defs>
-
-          <!-- 旋翼气流盘 -->
-          <g opacity=".75">
-            <circle cx="62" cy="52" r="40" fill="url(#dRotor)"/>
-            <circle cx="178" cy="52" r="40" fill="url(#dRotor)"/>
-            <circle cx="62" cy="148" r="40" fill="url(#dRotor)"/>
-            <circle cx="178" cy="148" r="40" fill="url(#dRotor)"/>
-          </g>
-          <!-- 机臂 -->
-          <g stroke="#ffffff" stroke-width="7" stroke-linecap="round" opacity=".9">
-            <path d="M96 86 L76 66"/><path d="M144 86 L164 66"/>
-            <path d="M96 114 L76 134"/><path d="M144 114 L164 134"/>
-          </g>
-          <!-- 旋翼 -->
-          <g>
-            <circle cx="62" cy="52" r="28" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="8"/>
-            <circle cx="62" cy="52" r="28" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-dasharray="16 9">
-              <animateTransform attributeName="transform" type="rotate" from="0 62 52" to="360 62 52" dur=".5s" repeatCount="indefinite"/>
-            </circle>
-            <circle cx="178" cy="52" r="28" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="8"/>
-            <circle cx="178" cy="52" r="28" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-dasharray="16 9">
-              <animateTransform attributeName="transform" type="rotate" from="0 178 52" to="360 178 52" dur=".46s" repeatCount="indefinite"/>
-            </circle>
-            <circle cx="62" cy="148" r="28" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="8"/>
-            <circle cx="62" cy="148" r="28" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-dasharray="16 9">
-              <animateTransform attributeName="transform" type="rotate" from="0 62 148" to="360 62 148" dur=".54s" repeatCount="indefinite"/>
-            </circle>
-            <circle cx="178" cy="148" r="28" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="8"/>
-            <circle cx="178" cy="148" r="28" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-dasharray="16 9">
-              <animateTransform attributeName="transform" type="rotate" from="0 178 148" to="360 178 148" dur=".42s" repeatCount="indefinite"/>
-            </circle>
-          </g>
-          <!-- 机身 -->
-          <rect x="88" y="78" width="64" height="64" rx="18" fill="url(#dBody)" stroke="#ffffff" stroke-width="2"/>
-          <circle cx="120" cy="110" r="15" fill="#0b3f8f" stroke="#7dd3fc" stroke-width="2.2"/>
-          <circle cx="120" cy="110" r="6.5" fill="#38bdf8"/>
-          <circle cx="120" cy="110" r="2.6" fill="#ffffff"/>
-          <!-- 云台相机 -->
-          <rect x="104" y="140" width="32" height="14" rx="7" fill="#e2eeff" stroke="#ffffff" stroke-width="1.4"/>
-          <circle cx="120" cy="147" r="5" fill="#0b3f8f" stroke="#7dd3fc" stroke-width="1.4"/>
-          <!-- 状态灯 -->
-          <circle cx="120" cy="90" r="3" fill="#4ade80">
-            <animate attributeName="opacity" values="1;.15;1" dur="2s" repeatCount="indefinite"/>
-          </circle>
-        </svg>
-        <!-- 扫描光锥 -->
-        <div class="drone-beam"></div>
+    <!-- ===== 航空 HUD:四角角括号 + REC + 遥测文字 ===== -->
+    <div class="hud">
+      <i class="hc tl"></i><i class="hc tr"></i><i class="hc bl"></i><i class="hc br"></i>
+      <span class="rec"><i></i>REC</span>
+      <div class="telemetry">
+        <span class="tm-hd">// UAV-01 TELEMETRY</span>
+        <span class="tm-row">ALT 120M&nbsp;&nbsp;SPD 5.2M/S</span>
+        <span class="tm-row">SAT 18&nbsp;&nbsp;&nbsp;&nbsp;LINK 5G&nbsp;&nbsp;<i class="tm-cur"></i></span>
       </div>
     </div>
 
@@ -141,14 +315,14 @@
         <div class="top-left">
           <span class="top-emblem">
             <svg viewBox="0 0 120 120" fill="none">
-              <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="2" stroke-dasharray="7 5"/>
+              <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="2" stroke-dasharray="7 5" />
               <path d="M60 22 L92 35 V64 C92 84 78 98 60 104 C42 98 28 84 28 64 V35 Z"
-                    fill="#ffffff" stroke="#ffffff" stroke-width="2.4"/>
-              <circle cx="60" cy="58" r="4.2" fill="#1877e6"/>
+                    fill="#ffffff" stroke="#ffffff" stroke-width="2.4" />
+              <circle cx="60" cy="58" r="4.2" fill="#1877e6" />
               <path d="M49 47 L56 54 M71 47 L64 54 M49 69 L56 62 M71 69 L64 62"
-                    stroke="#1877e6" stroke-width="2.2" stroke-linecap="round"/>
-              <circle cx="48" cy="46" r="2.8" fill="#1877e6"/><circle cx="72" cy="46" r="2.8" fill="#1877e6"/>
-              <circle cx="48" cy="70" r="2.8" fill="#1877e6"/><circle cx="72" cy="70" r="2.8" fill="#1877e6"/>
+                    stroke="#1877e6" stroke-width="2.2" stroke-linecap="round" />
+              <circle cx="48" cy="46" r="2.8" fill="#1877e6" /><circle cx="72" cy="46" r="2.8" fill="#1877e6" />
+              <circle cx="48" cy="70" r="2.8" fill="#1877e6" /><circle cx="72" cy="70" r="2.8" fill="#1877e6" />
             </svg>
           </span>
           <span class="top-name">应急巡检平台</span>
@@ -226,7 +400,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock, Key, Loading } from '@element-plus/icons-vue'
 import http from '../api'
-import { CITY_FACES, CITY_VIEWBOX } from './login/cityScene'
 
 const router = useRouter()
 const loading = ref(false)
@@ -237,12 +410,6 @@ const form = reactive({ username: 'admin', password: '', captcha: '', cid: '' })
 const svgUrl = computed(() =>
   captchaSvg.value ? 'data:image/svg+xml;utf8,' + encodeURIComponent(captchaSvg.value) : ''
 )
-
-/* 场景轮播:城市 → 山地 → 河川,8 秒一切 */
-const SCENE_NAMES = ['城市', '山地', '河川']
-const SCENE_INTERVAL = 8000
-const scene = ref(0)
-let sceneTimer = null
 
 /* 顶部时钟 */
 const clock = ref('')
@@ -257,11 +424,9 @@ onMounted(() => {
   loadCaptcha()
   tick()
   clockTimer = setInterval(tick, 1000)
-  sceneTimer = setInterval(() => { scene.value = (scene.value + 1) % SCENE_NAMES.length }, SCENE_INTERVAL)
 })
 onUnmounted(() => {
   clearInterval(clockTimer)
-  clearInterval(sceneTimer)
 })
 
 async function loadCaptcha() {
@@ -297,8 +462,9 @@ async function doLogin() {
 </script>
 
 <style scoped>
-/* ===== 亮蓝科技风:亮蓝底 + 白色 3D 场景 + 飞行无人机 ===== */
+/* ===== 亮蓝科技风:亮蓝底 + 无人机巡检作业大场景 ===== */
 .login-page {
+  --drone-w: clamp(250px, 23vw, 335px);
   position: relative; height: 100%; overflow: hidden;
   display: flex; flex-direction: column;
   background: #0b5ed7;
@@ -327,67 +493,203 @@ async function doLogin() {
   background: radial-gradient(ellipse 84% 74% at 50% 42%, transparent 46%, rgba(3, 26, 66, .42) 100%);
 }
 
-/* ===== 场景层 ===== */
-.scene-layer { position: absolute; inset: 0; pointer-events: none; }
-.scene {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  width: 100%; height: 68%;
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 1.4s ease, transform 1.4s ease;
+/* ===== 透视网格地面 ===== */
+.floor-wrap {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 46%;
+  perspective: 760px; overflow: hidden; pointer-events: none;
+  mask-image: linear-gradient(180deg, transparent 0, #000 30%, rgba(0, 0, 0, .9) 82%, #000 100%);
 }
-.scene.active { opacity: 1; transform: translateY(0); }
-
-/* 场景切换指示 */
-.scene-dots {
-  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
-  display: flex; gap: 10px; z-index: 4;
+.floor {
+  position: absolute; left: -55%; right: -55%; top: -2px; height: 320%;
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, .13) 0 2px, transparent 2px 68px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .08) 0 2px, transparent 2px 112px);
+  transform: rotateX(63deg); transform-origin: 50% 0;
+  animation: floor-scroll 4.2s linear infinite;
 }
-.dot {
-  padding: 4px 14px; border-radius: 999px; cursor: pointer;
-  font-size: 12px; letter-spacing: 1px; color: rgba(255, 255, 255, .7);
-  background: rgba(255, 255, 255, .10);
-  border: 1px solid rgba(255, 255, 255, .22);
-  transition: all .25s;
+@keyframes floor-scroll {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 68px, 0 0; }
 }
-.dot:hover { color: #fff; background: rgba(255, 255, 255, .18); }
-.dot.on {
-  color: #0b3f8f; font-weight: 700;
-  background: rgba(255, 255, 255, .92);
-  border-color: #fff;
+.horizon {
+  position: absolute; left: 0; right: 0; top: 54%; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .38) 25%, rgba(255, 255, 255, .38) 75%, transparent);
 }
 
-/* ===== 飞行中的无人机 ===== */
-.drone {
-  position: absolute; z-index: 3; pointer-events: none;
-  width: 190px; height: 158px;
-  /* 沿一条横跨画面的弧线飞行;轨迹压在标题上方,避免掠过文案 */
-  offset-path: path('M -160 250 C 180 100, 620 92, 1000 176 C 1260 236, 1500 214, 1760 120');
-  offset-rotate: auto;
-  animation: drone-fly 26s linear infinite;
-  filter: drop-shadow(0 18px 34px rgba(3, 30, 76, .5));
+/* ===== 地面线稿场景 ===== */
+.ground { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 56%; pointer-events: none; }
+.river-flow { animation: river-flow 7s linear infinite; }
+@keyframes river-flow { to { stroke-dashoffset: -112; } }
+.river-flow2 { animation: river-flow2 11s linear infinite reverse; }
+@keyframes river-flow2 { to { stroke-dashoffset: -100; } }
+.of1 { animation: discharge 2.8s ease-out infinite; }
+.of2 { animation: discharge 3.4s ease-out infinite .6s; }
+.of3 { animation: discharge 4s ease-out infinite 1.2s; }
+@keyframes discharge {
+  0% { transform: translateX(0); opacity: .8; }
+  100% { transform: translateX(16px); opacity: 0; }
 }
-@keyframes drone-fly {
-  from { offset-distance: 0%; }
-  to { offset-distance: 100%; }
-}
-.drone-bob { position: relative; width: 100%; height: 100%; animation: drone-bob 3.4s ease-in-out infinite; }
-@keyframes drone-bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-.drone-bob svg { width: 100%; height: 100%; }
 
-/* 下视扫描光锥 */
-.drone-beam {
-  position: absolute; left: 50%; top: 74%;
-  width: 92px; height: 92px;
+/* AI 目标识别框:出现 → 打字机标签 → 停留 → 淡出(目标间错开节奏) */
+.tgt { opacity: 0; animation: tgt-cycle 10s ease-in-out infinite; }
+@keyframes tgt-cycle {
+  0% { opacity: 0; }
+  6% { opacity: 1; }
+  70% { opacity: 1; }
+  82% { opacity: 0; }
+  100% { opacity: 0; }
+}
+.tc { opacity: 0; animation: tc-in 10s linear infinite; }
+@keyframes tc-in {
+  0%, 4% { opacity: 0; }
+  7%, 100% { opacity: 1; }
+}
+
+/* ===== 雷达 ===== */
+.radar {
+  position: absolute; left: 50%; top: 7%; width: clamp(110px, 11vw, 160px); aspect-ratio: 1;
+  transform: translateX(-50%); opacity: .9; pointer-events: none; z-index: 2;
+}
+
+/* ===== 无人机机组(整机缓慢横移,光锥/高亮/准星随动) ===== */
+.drone-rig {
+  position: absolute; inset: 0; pointer-events: none; z-index: 3;
+  animation: rig-sway 13s ease-in-out infinite alternate;
+}
+@keyframes rig-sway {
+  from { transform: translateX(-14px); }
+  to { transform: translateX(14px); }
+}
+
+/* 下视扫描光锥:扇形 + 横向扫描线来回脉冲 */
+.scan-cone {
+  position: absolute; left: 50%; top: 33%; height: 39.5%; width: min(30vw, 470px);
   transform: translateX(-50%);
-  clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%);
-  background: linear-gradient(180deg, rgba(255, 255, 255, .5), rgba(255, 255, 255, 0));
-  animation: beam-pulse 2.6s ease-in-out infinite;
+  clip-path: polygon(44.6% 0, 55.4% 0, 100% 100%, 0 100%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .3) 90%),
+    repeating-linear-gradient(180deg, transparent 0 26px, rgba(255, 255, 255, .27) 26px 32px);
+  animation: scan-move 2.6s ease-in-out infinite alternate;
+  mask-image: linear-gradient(180deg, transparent 0, #000 20%, #000 82%, transparent 98%);
 }
-@keyframes beam-pulse { 0%, 100% { opacity: .5; } 50% { opacity: .95; } }
+@keyframes scan-move {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 0, 0 58px; }
+}
+
+/* 地面被扫到位置的高亮 + 声呐扩散环 */
+.scan-glow {
+  position: absolute; left: 50%; top: 72.5%; width: min(32vw, 420px); height: 92px;
+  transform: translate(-50%, -50%); border-radius: 50%; filter: blur(1px);
+  background: radial-gradient(50% 50% at 50% 50%, rgba(255, 255, 255, .5), rgba(255, 255, 255, .16) 55%, transparent 75%);
+  animation: glow-pulse 2.6s ease-in-out infinite;
+}
+@keyframes glow-pulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: .95; }
+}
+.scan-glow::after {
+  content: ''; position: absolute; inset: 22% 14%;
+  border: 1.5px solid rgba(255, 255, 255, .7); border-radius: 50%;
+  animation: ring-x 2.6s ease-out infinite;
+}
+@keyframes ring-x {
+  0% { transform: scale(.45); opacity: .85; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+/* 跟踪准星 */
+.reticle {
+  position: absolute; left: 50%; top: 72.5%; width: 64px; height: 64px;
+  transform: translate(-50%, -50%); opacity: .55;
+}
+.reticle .rr {
+  position: absolute; inset: 8px;
+  border: 1.5px dashed rgba(255, 255, 255, .75); border-radius: 50%;
+  animation: ret-spin 16s linear infinite;
+}
+.reticle .rch {
+  position: absolute; top: 50%; left: -12px; right: -12px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .85), transparent);
+}
+.reticle .rcv {
+  position: absolute; left: 50%; top: -12px; bottom: -12px; width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, .85), transparent);
+}
+@keyframes ret-spin { to { transform: rotate(360deg); } }
+
+/* 主体大无人机:悬浮呼吸(上下 + 轻微俯仰) */
+.drone {
+  position: absolute; left: 50%; top: 18%;
+  width: var(--drone-w); aspect-ratio: 560 / 300;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 26px 42px rgba(3, 30, 76, .5));
+}
+.drone-bob { width: 100%; height: 100%; animation: drone-hover 4.6s ease-in-out infinite; }
+@keyframes drone-hover {
+  0%, 100% { transform: translateY(0) rotate(.5deg); }
+  50% { transform: translateY(-14px) rotate(-.7deg); }
+}
+.drone-bob svg { width: 100%; height: 100%; display: block; }
+
+/* ===== 回传数据粒子 ===== */
+.particles { position: absolute; left: 0; right: 0; top: 35%; height: 36%; pointer-events: none; z-index: 2; }
+.pl {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  animation: rise var(--d) linear infinite; animation-delay: var(--dl);
+}
+.pl i {
+  position: absolute; bottom: -3px; left: -2px;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 10px 2px rgba(255, 255, 255, .6); opacity: 0;
+  animation: dot-fade var(--d) linear infinite, dot-sway var(--d) ease-in-out infinite;
+  animation-delay: var(--dl), var(--dl);
+}
+@keyframes rise {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-100%); }
+}
+@keyframes dot-fade {
+  0% { opacity: 0; }
+  12% { opacity: .95; }
+  78% { opacity: .5; }
+  100% { opacity: 0; }
+}
+@keyframes dot-sway {
+  0%, 100% { transform: translateX(-7px); }
+  50% { transform: translateX(7px); }
+}
+
+/* ===== 航空 HUD ===== */
+.hud { position: absolute; top: 74px; left: 28px; right: 28px; bottom: 28px; pointer-events: none; z-index: 2; }
+.hc { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(255, 255, 255, .3); }
+.hc.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.hc.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.hc.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.hc.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+.rec {
+  position: absolute; top: 4px; right: 38px;
+  display: flex; align-items: center; gap: 6px;
+  font: 700 11px / 1 Consolas, 'Courier New', monospace;
+  letter-spacing: 2px; color: rgba(255, 255, 255, .6);
+}
+.rec i {
+  width: 7px; height: 7px; border-radius: 50%; background: #f87171;
+  box-shadow: 0 0 8px rgba(248, 113, 113, .9);
+  animation: live-blink 1.6s infinite;
+}
+.telemetry {
+  position: absolute; left: 0; bottom: 5%;
+  font: 11px / 2 Consolas, 'Courier New', monospace;
+  letter-spacing: 1.5px; color: rgba(255, 255, 255, .58);
+}
+.tm-hd { display: block; color: rgba(255, 255, 255, .42); margin-bottom: 2px; }
+.tm-row { display: block; }
+.tm-cur {
+  display: inline-block; width: 7px; height: 12px;
+  background: rgba(255, 255, 255, .65); vertical-align: -1px;
+  animation: live-blink 1.1s steps(1) infinite;
+}
 
 /* ===== 顶部栏 ===== */
 .top-bar {
@@ -416,7 +718,7 @@ async function doLogin() {
 .top-clock { font-size: 12.5px; color: rgba(255, 255, 255, .82); font-variant-numeric: tabular-nums; }
 
 /* ===== 主体 ===== */
-.stage { position: relative; z-index: 2; flex: 1; min-height: 0; display: flex; align-items: center; }
+.stage { position: relative; z-index: 4; flex: 1; min-height: 0; display: flex; align-items: center; }
 
 .brand { flex: 1; min-width: 0; display: flex; align-items: center; }
 .brand-inner { padding: 0 0 0 7%; max-width: 640px; }
@@ -570,25 +872,33 @@ async function doLogin() {
 /* ===== 响应式 ===== */
 @media (max-width: 1500px) {
   .title { font-size: 42px; letter-spacing: 8px; text-indent: 8px; }
-  .drone { width: 165px; height: 138px; }
+  .login-page { --drone-w: clamp(225px, 21vw, 295px); }
+  .radar { width: clamp(104px, 10.5vw, 148px); }
 }
 @media (max-width: 1280px) {
   .brand-inner { max-width: 430px; }
   .login-wrap { width: 450px; }
   .login-card { width: 370px; }
   .title { font-size: 36px; letter-spacing: 6px; text-indent: 6px; }
-  .drone { width: 140px; height: 118px; }
+  .login-page { --drone-w: clamp(195px, 19.5vw, 255px); }
+  .drone { left: 52%; }
+  .telemetry { font-size: 10px; }
 }
 @media (max-width: 1100px) {
   .top-sub { display: none; }
-  .drone { width: 118px; height: 100px; }
+  .login-page { --drone-w: clamp(170px, 18vw, 225px); }
+  .radar { width: 104px; top: 8.5%; }
+  .telemetry { display: none; }
 }
 @media (max-width: 900px) {
   .brand { display: none; }
   .login-wrap { width: 100%; }
   .login-card { width: calc(100% - 48px); max-width: 400px; }
   .top-right { display: none; }
-  .drone { display: none; }
+  .login-page { --drone-w: clamp(150px, 24vw, 200px); }
+  .drone { top: 13%; left: 50%; }
+  .radar { width: 92px; }
+  .hud { left: 16px; right: 16px; }
 }
 
 /* 矮屏压缩 */
@@ -598,12 +908,21 @@ async function doLogin() {
   .chips { margin-top: 20px; }
   .card-head { padding: 20px 32px 15px; }
   .card-body { padding: 18px 34px 20px; }
-  .scene { height: 62%; }
+  .login-page { --drone-w: clamp(210px, 20vw, 270px); }
+  .drone { top: 16%; }
+  .radar { width: clamp(96px, 9vw, 128px); top: 8%; }
+  .scan-cone { top: 30%; height: 41%; }
+  .scan-glow, .reticle { top: 71%; }
 }
 @media (max-height: 720px) {
   .sub { display: none; }
   .rule { margin: 12px 0; }
-  .scene { height: 56%; }
-  .scene-dots { bottom: 12px; }
+  .radar { display: none; }
+  .telemetry { display: none; }
+  .login-page { --drone-w: clamp(180px, 18vw, 235px); }
+  .drone { top: 14%; }
+  .scan-cone { top: 27%; height: 43.5%; }
+  .scan-glow, .reticle { top: 70.5%; }
+  .particles { opacity: .55; }
 }
 </style>

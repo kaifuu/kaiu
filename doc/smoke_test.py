@@ -367,11 +367,58 @@ bad("通道名称必填", "POST", "/videos", {"streamUrl": "x"})
 d = ok("通道上线", "POST", "/videos/%s/status?online=true" % video["id"])
 check("上线后记录最后一帧时间", d.get("status") == "ONLINE" and d.get("lastFrameAt"), d)
 
-print("\n[11] 错误归一")
+print("\n[11] 机场扩展能力(航线 / 任务 / 固件 / 日志 / AI)")
+wls = ok("GET /waylines 航线库", "GET", "/waylines")
+wl = next((w for w in wls if w["code"] == "WL0001"), wls[0] if wls else None)
+check("航线带航点数", wl and wl.get("waypointCount") == 4, wl and wl.get("waypointCount"))
+nwl = ok("新增航线", "POST", "/waylines",
+         {"name": "冒烟航线", "templateTypes": "WAYPOINT", "alt": 66, "speed": 5,
+          "waypoints": [{"longitude": 116.39, "latitude": 39.90, "height": 66, "speed": 5}]})
+check("航点序列化", nwl and nwl.get("waypointCount") == 1, nwl)
+ok("修改航线", "PUT", "/waylines/%s" % nwl["id"], {"name": "冒烟航线-改"})
+bad("空航点被拒", "POST", "/waylines", {"name": "x"})
+ok("删除航线", "DELETE", "/waylines/%s" % nwl["id"])
+
+ndock = ok("新增离线机场", "POST", "/devices",
+           {"name": "冒烟离线机场", "deviceSn": "DOCK-SMOKE-NE1",
+            "deviceType": "DOCK", "deviceModel": "DJI Dock 2"})
+bad("离线机场任务下发被拒", "POST", "/wayline-jobs",
+    {"dockId": ndock["id"], "waylineId": wl["id"], "jobType": "IMMEDIATE"})
+njobs = ok("任务分页(按机场过滤)", "GET",
+           "/wayline-jobs/page?page=1&size=10&dockSn=DOCK-SMOKE-NE1")
+check("失败任务留痕带原因", any(j["status"] == "FAILED" and j.get("errorMsg")
+                                for j in njobs.get("rows", [])), njobs)
+bad("定时任务缺执行时间被拒", "POST", "/wayline-jobs",
+    {"dockId": ndock["id"], "waylineId": wl["id"], "jobType": "TIMED"})
+
+fws = ok("GET /firmwares 固件库", "GET", "/firmwares")
+nfw = ok("新增固件", "POST", "/firmwares",
+         {"productType": "DOCK", "deviceModel": "DJI Dock 2", "version": "v0.0.1-smoke",
+          "fileName": "smoke.bin", "fileSize": 1024, "fileMd5": "0" * 32,
+          "fileUrl": "http://oss.local/firmware/smoke.bin"})
+ok("修改固件", "PUT", "/firmwares/%s" % nfw["id"], {"remark": "冒烟"})
+dep = ok("下发升级(离线设备)", "POST", "/firmwares/%s/deploy" % nfw["id"],
+         {"deviceIds": [ndock["id"]]})
+check("离线设备任务直接 FAILED", dep and dep[0]["status"] == "FAILED", dep)
+ftasks = ok("GET /firmware-tasks/page", "GET", "/firmware-tasks/page?page=1&size=5")
+check("升级任务分页 {rows,total}", "rows" in ftasks and "total" in ftasks, ftasks)
+ok("删除固件", "DELETE", "/firmwares/%s" % nfw["id"])
+
+bad("离线机场日志同步被拒", "POST", "/devices/%s/logs/sync" % ndock["id"])
+acfg = ok("AI 配置默认可读", "GET", "/devices/%s/ai/config" % ndock["id"])
+check("默认置信度 80", acfg and acfg.get("confidenceValue") == 80, acfg)
+acfg = ok("离线机场 AI 配置保存", "PUT", "/devices/%s/ai/config" % ndock["id"],
+          {"enabled": True, "confidenceMode": "CUSTOM", "confidenceValue": 75,
+           "filterTypes": ["PERSON", "BOAT"]})
+check("离线保存 synced=false", acfg and acfg.get("synced") is False, acfg)
+ok("AI 识别记录分页", "GET", "/devices/%s/ai/targets/page?page=1&size=5" % ndock["id"])
+ok("删除离线机场", "DELETE", "/devices/%s" % ndock["id"])
+
+print("\n[12] 错误归一")
 bad("不存在的接口返回 404", "GET", "/no/such/endpoint", want_code=404)
 
 # ---------------------------------------------------------------- 清理
-print("\n[12] 清理测试数据")
+print("\n[13] 清理测试数据")
 ok("删除视频通道", "DELETE", "/videos/%s" % video["id"])
 ok("删除飞手", "DELETE", "/pilots/%s" % pilot["id"])
 ok("删除需求", "DELETE", "/demands/%s" % demand["id"])

@@ -385,6 +385,31 @@
           </div>
         </el-tab-pane>
 
+        <!-- ============ TAB 航线任务 ============ -->
+        <el-tab-pane label="航线任务" name="wayline" lazy>
+          <WaylineTab :dock="dock" />
+        </el-tab-pane>
+
+        <!-- ============ TAB 远程调试 ============ -->
+        <el-tab-pane label="远程调试" name="debug" lazy>
+          <DebugTab :dock="dock" />
+        </el-tab-pane>
+
+        <!-- ============ TAB 固件升级 ============ -->
+        <el-tab-pane label="固件升级" name="firmware" lazy>
+          <FirmwareTab :dock="dock" />
+        </el-tab-pane>
+
+        <!-- ============ TAB 远程日志 ============ -->
+        <el-tab-pane label="远程日志" name="logs" lazy>
+          <LogTab :dock="dock" />
+        </el-tab-pane>
+
+        <!-- ============ TAB AI识别 ============ -->
+        <el-tab-pane label="AI识别" name="ai" lazy>
+          <AiTab :dock="dock" />
+        </el-tab-pane>
+
         <!-- ============ TAB 3 指令记录 ============ -->
         <el-tab-pane label="指令记录" name="history">
           <div class="tab-pad">
@@ -501,6 +526,11 @@ import {
   DEVICE_STATUS, COMMAND_STATUS, DEVICE_EVENT_TYPE, COVER_STATE,
   dictLabel, dictTag, dictOptions, modeTag
 } from '../../utils/dict'
+import WaylineTab from './dock/WaylineTab.vue'
+import DebugTab from './dock/DebugTab.vue'
+import FirmwareTab from './dock/FirmwareTab.vue'
+import LogTab from './dock/LogTab.vue'
+import AiTab from './dock/AiTab.vue'
 
 const route = useRoute()
 const id = route.params.id
@@ -605,9 +635,12 @@ const switchState = (key) => {
 }
 const switchBusy = ref('')
 
+/** 远程调试 TAB 专属指令:带参数或由专门页面(航线/OTA/日志)编排,不进操作台按钮流 */
+const HIDDEN_IN_CONSOLE = new Set(['flighttask_prepare','flighttask_execute','flighttask_undo','takeoff_to_point','ota_create','logs_file_list','logs_file_upload'])
+
 /** 维护动作:开关与返航之外的一次性指令,平铺在操作台底部 */
 const actionCmds = computed(() =>
-  services.value.filter((s) => !SWITCH_METHODS.has(s.method) && s.method !== 'return_home'))
+  services.value.filter((s) => !SWITCH_METHODS.has(s.method) && s.method !== 'return_home' && !HIDDEN_IN_CONSOLE.has(s.method)))
 
 /** 一键返航:操作台最醒目的动作,单独做成带保护的大红钮 */
 const rthDef = computed(() => services.value.find((s) => s.method === 'return_home'))

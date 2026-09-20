@@ -214,6 +214,59 @@ if (await dockRow.count()) {
   evtPager > 0
     ? ok(`TAB 设备事件:${evtRows} 行,含筛选与分页`)
     : bad('TAB 设备事件', `无分页器(行=${evtRows})`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-events.png` })
+
+  // TAB 航线任务:左航线库 + 右任务表
+  await page.locator('.el-tabs__item', { hasText: '航线任务' }).click()
+  await page.waitForTimeout(1500)
+  let wlRows = await page.locator('.el-tab-pane:visible .el-table__body tr').count()
+  let wlJobBtn = await page.locator('.el-tab-pane:visible button:has-text("下发任务")').count()
+  wlRows > 0 && wlJobBtn === 1
+    ? ok(`TAB 航线任务:航线/任务表 ${wlRows} 行,含下发入口`)
+    : bad('TAB 航线任务', `行=${wlRows} 下发钮=${wlJobBtn}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-wayline.png` })
+
+  // TAB 远程调试:指令目录 + 选中后出现参数执行区
+  await page.locator('.el-tabs__item', { hasText: '远程调试' }).click()
+  await page.waitForTimeout(1500)
+  let dbgItems = await page.locator('.el-tab-pane:visible .cat-item').count()
+  await page.locator('.el-tab-pane:visible .cat-item').first().click()
+  await page.waitForTimeout(800)
+  let dbgExec = await page.locator('.el-tab-pane:visible button:has-text("执行指令")').count()
+  dbgItems > 0 && dbgExec === 1
+    ? ok(`TAB 远程调试:目录 ${dbgItems} 项,选中出执行区`)
+    : bad('TAB 远程调试', `目录=${dbgItems} 执行钮=${dbgExec}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-debug.png` })
+
+  // TAB 固件升级:固件库 + 升级任务
+  await page.locator('.el-tabs__item', { hasText: '固件升级' }).click()
+  await page.waitForTimeout(1500)
+  let fwRows = await page.locator('.el-tab-pane:visible .el-table__body tr').count()
+  let fwDeploy = await page.locator('.el-tab-pane:visible button:has-text("下发升级")').count()
+  fwRows > 0 && fwDeploy > 0
+    ? ok(`TAB 固件升级:固件/任务表 ${fwRows} 行,含下发升级`)
+    : bad('TAB 固件升级', `行=${fwRows} 下发钮=${fwDeploy}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-firmware.png` })
+
+  // TAB 远程日志:拉取列表 + 上传所选
+  await page.locator('.el-tabs__item', { hasText: '远程日志' }).click()
+  await page.waitForTimeout(1500)
+  let logSync = await page.locator('.el-tab-pane:visible button:has-text("拉取")').count()
+  let logUpload = await page.locator('.el-tab-pane:visible button:has-text("上传所选")').count()
+  logSync === 1 && logUpload === 1
+    ? ok('TAB 远程日志:含拉取列表与上传所选')
+    : bad('TAB 远程日志', `拉取=${logSync} 上传=${logUpload}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-logs.png` })
+
+  // TAB AI识别:配置卡 + 识别记录
+  await page.locator('.el-tabs__item', { hasText: 'AI识别' }).click()
+  await page.waitForTimeout(1500)
+  let aiSwitch = await page.locator('.el-tab-pane:visible .el-switch').count()
+  let aiSave = await page.locator('.el-tab-pane:visible button:has-text("保存")').count()
+  aiSwitch >= 2 && aiSave === 1
+    ? ok(`TAB AI识别:${aiSwitch} 个开关 + 保存下发`)
+    : bad('TAB AI识别', `开关=${aiSwitch} 保存钮=${aiSave}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-ai.png` })
 } else {
   bad('机场控制页', '列表中没有机场(模拟器未运行?)')
 }

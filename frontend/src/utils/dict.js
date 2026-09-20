@@ -174,6 +174,57 @@ export function modeTag(deviceType, code) {
   return map[code]?.tagType || 'info'
 }
 
+/* ---------------- 机场作业(航线 / 固件 / 日志 / AI 识别,对齐上云 API) ---------------- */
+export const WAYLINE_TEMPLATE = {
+  WAYPOINT: { label: '航点模板', tagType: 'primary' },
+  POI: { label: '兴趣点', tagType: 'success' },
+  INSPECT: { label: '巡查拍照', tagType: 'warning' },
+  STRIP: { label: '航带作业', tagType: 'primary' },
+  SOLID: { label: '立体作业', tagType: 'info' }
+}
+
+export const WAYLINE_JOB_TYPE = {
+  IMMEDIATE: { label: '立即任务', tagType: 'primary' },
+  TIMED: { label: '定时任务', tagType: 'warning' }
+}
+
+export const WAYLINE_JOB_STATUS = {
+  SENT: { label: '已下发', tagType: 'primary' },
+  READY: { label: '机场就绪', tagType: 'warning' },
+  QUEUED: { label: '已入队', tagType: 'primary' },
+  RUNNING: { label: '执行中', tagType: 'success' },
+  SUCCESS: { label: '已完成', tagType: 'success' },
+  FAILED: { label: '失败', tagType: 'danger' },
+  CANCELED: { label: '已取消', tagType: 'info' }
+}
+
+export const FIRMWARE_TASK_STATUS = {
+  SENT: { label: '已下发', tagType: 'primary' },
+  DOWNLOADING: { label: '下载中', tagType: 'primary' },
+  UPGRADING: { label: '升级中', tagType: 'warning' },
+  SUCCESS: { label: '升级成功', tagType: 'success' },
+  FAILED: { label: '升级失败', tagType: 'danger' }
+}
+
+export const DEVICE_LOG_STATUS = {
+  FOUND: { label: '待上传', tagType: 'info' },
+  UPLOADING: { label: '上传中', tagType: 'primary' },
+  UPLOADED: { label: '已上传', tagType: 'success' },
+  FAILED: { label: '失败', tagType: 'danger' }
+}
+
+export const AI_TARGET_TYPE = {
+  PERSON: { label: '人员', tagType: 'danger' },
+  CAR: { label: '车辆', tagType: 'warning' },
+  BOAT: { label: '船只', tagType: 'primary' }
+}
+
+export const AI_CONFIDENCE_MODE = {
+  COUNT: { label: '计数模式', tagType: 'primary' },
+  RESCUE: { label: '搜救模式', tagType: 'warning' },
+  CUSTOM: { label: '自定义', tagType: 'success' }
+}
+
 /* ---------------- 巡检服务(问题 / 工单 / 需求 / 飞手 / 视频) ---------------- */
 export const ISSUE_TYPE = {
   ILLEGAL_BUILD: { label: '疑似违建', tagType: 'danger' },

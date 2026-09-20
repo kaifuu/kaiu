@@ -16,7 +16,9 @@ public class DeviceEvent extends BaseEntity {
         OFFLINE,       // 设备离线
         HMS,           // 健康告警
         FLIGHTTASK,    // 航线任务进度
-        FILE_UPLOAD,   // 媒体文件上传
+        FILE_UPLOAD,   // 媒体/日志文件上传
+        OTA,           // 固件升级进度
+        AI,            // AI 目标识别
         OTHER;
 
         @Override

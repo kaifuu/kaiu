@@ -2,9 +2,11 @@ package com.emergency.inspection.config;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.emergency.inspection.entity.EmergencyEvent;
+import com.emergency.inspection.entity.Firmware;
 import com.emergency.inspection.entity.InspectDemand;
 import com.emergency.inspection.entity.InspectIssue;
 import com.emergency.inspection.entity.Pilot;
+import com.emergency.inspection.entity.Wayline;
 import com.emergency.inspection.entity.VideoChannel;
 import com.emergency.inspection.entity.WorkOrder;
 import com.emergency.inspection.entity.Hazard;
@@ -17,6 +19,7 @@ import com.emergency.inspection.entity.SysRole;
 import com.emergency.inspection.entity.SysTenant;
 import com.emergency.inspection.entity.SysUser;
 import com.emergency.inspection.mapper.EmergencyEventMapper;
+import com.emergency.inspection.mapper.FirmwareMapper;
 import com.emergency.inspection.mapper.InspectDemandMapper;
 import com.emergency.inspection.mapper.InspectIssueMapper;
 import com.emergency.inspection.mapper.PilotMapper;
@@ -31,6 +34,8 @@ import com.emergency.inspection.mapper.SysOrgMapper;
 import com.emergency.inspection.mapper.SysRoleMapper;
 import com.emergency.inspection.mapper.SysTenantMapper;
 import com.emergency.inspection.mapper.SysUserMapper;
+import com.emergency.inspection.mapper.WaylineMapper;
+import com.emergency.inspection.service.WaylineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -70,6 +75,8 @@ public class DataInitializer implements CommandLineRunner {
     private final InspectDemandMapper demandMapper;
     private final PilotMapper pilotMapper;
     private final VideoChannelMapper videoChannelMapper;
+    private final WaylineMapper waylineMapper;
+    private final FirmwareMapper firmwareMapper;
 
     /** 目标菜单布局(BIZ 业务菜单 / SYS 系统管理),path 为唯一键 */
     private static final List<SysMenu> MENU_SEED = List.of(
@@ -102,6 +109,7 @@ public class DataInitializer implements CommandLineRunner {
             log.info("已存在用户数据,跳过演示数据初始化");
             // 巡检服务模块是后加的,存量库也补一次(内部自带幂等判断)
             seedServiceData();
+            seedDockExtData();
             return;
         }
         log.info("首次启动,写入演示数据 ...");
@@ -112,6 +120,7 @@ public class DataInitializer implements CommandLineRunner {
         seedUsers(tenant, root, adminRole);
         seedBusinessData();
         seedServiceData();
+        seedDockExtData();
 
         log.info("演示数据写入完成:租户 1 / 组织 4 / 菜单 {} / 角色 3 / 用户 3", MENU_SEED.size());
     }
@@ -257,6 +266,84 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     // ==================== 业务演示数据 ====================
+
+    // ==================== 机场扩展能力演示数据(航线库 / 固件库) ====================
+
+    private void seedDockExtData() {
+        if (waylineMapper.selectCount(Wrappers.<Wayline>lambdaQuery()) == 0) {
+            waylineMapper.insert(wayline("WL0001", "潮白河巡检航线", Wayline.TemplateTypes.INSPECT,
+                    90, 8, new double[][]{
+                            {116.72700, 39.91780, 90, 8},
+                            {116.73210, 39.92150, 90, 8},
+                            {116.73820, 39.92510, 85, 7},
+                            {116.74400, 39.92980, 85, 7}},
+                    "潮白河入河排污口至下游断面段,覆盖 4 个巡检点,全程沿右岸飞行"));
+            waylineMapper.insert(wayline("WL0002", "密云水库环线航线", Wayline.TemplateTypes.WAYPOINT,
+                    120, 10, new double[][]{
+                            {116.93500, 40.48300, 120, 10},
+                            {116.94120, 40.48960, 120, 10},
+                            {116.94800, 40.49400, 115, 9},
+                            {116.95400, 40.48800, 115, 9},
+                            {116.94700, 40.48200, 115, 9}},
+                    "密云水库白河主坝环线,饮用水源地保护区巡查,注意禁飞区边界"));
+            waylineMapper.insert(wayline("WL0003", "永定河巡检航线", Wayline.TemplateTypes.STRIP,
+                    80, 6, new double[][]{
+                            {116.21500, 39.85800, 80, 6},
+                            {116.22140, 39.86230, 80, 6},
+                            {116.22800, 39.86600, 75, 6}},
+                    "永定河晓月湖断面航带作业,低空慢速获取岸线高清影像"));
+            log.info("航线库演示数据写入完成:3 条");
+        }
+        if (firmwareMapper.selectCount(Wrappers.<Firmware>lambdaQuery()) == 0) {
+            firmwareMapper.insert(firmware(Firmware.ProductType.DOCK, "DJI Dock 2",
+                    "v4.2.1", "dock2_fw_v4.2.1.bin", 186_000_000L,
+                    "3f8a1c2d4e5b60718293a4b5c6d7e8f9", "修复低温环境舱盖异响,优化充电功率曲线"));
+            firmwareMapper.insert(firmware(Firmware.ProductType.DOCK, "DJI Dock 2",
+                    "v4.1.8", "dock2_fw_v4.1.8.bin", 182_500_000L,
+                    "9a8b7c6d5e4f30211203a4b5c6d7e8f0", "增强雨雪天气推杆可靠性"));
+            firmwareMapper.insert(firmware(Firmware.ProductType.DRONE, "Matrice 3D",
+                    "v6.0.5", "m3d_fw_v6.0.5.bin", 245_000_000L,
+                    "1d2c3b4a5968778695a4b3c2d1e0f192", "提升夜视红外噪点抑制,新增巡检拍照模板"));
+            firmwareMapper.insert(firmware(Firmware.ProductType.DRONE, "Matrice 3D",
+                    "v5.9.2", "m3d_fw_v5.9.2.bin", 238_000_000L,
+                    "a1b2c3d4e5f60718293a4b5c6d7e8f90", "优化失控返航逻辑"));
+            log.info("固件库演示数据写入完成:4 条");
+        }
+    }
+
+    private Wayline wayline(String code, String name, Wayline.TemplateTypes tpl,
+                            double alt, double speed, double[][] points, String remark) {
+        Wayline w = WaylineService.of(name, tpl, alt, speed, waypointsJson(points), remark);
+        w.setCode(code);
+        return w;
+    }
+
+    /** 航点数组序列化:[{longitude,latitude,height,speed}] */
+    private static String waypointsJson(double[][] points) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < points.length; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(String.format("{\"longitude\":%.6f,\"latitude\":%.6f,\"height\":%.0f,\"speed\":%.0f}",
+                    points[i][0], points[i][1], points[i][2], points[i][3]));
+        }
+        return sb.append(']').toString();
+    }
+
+    private Firmware firmware(Firmware.ProductType type, String model, String version,
+                              String fileName, long size, String md5, String remark) {
+        Firmware f = new Firmware();
+        f.setProductType(type);
+        f.setDeviceModel(model);
+        f.setVersion(version);
+        f.setFileName(fileName);
+        f.setFileSize(size);
+        f.setFileMd5(md5);
+        f.setFileUrl("http://oss.local/firmware/" + fileName);
+        f.setRemark(remark);
+        return f;
+    }
 
     // ==================== 巡检服务演示数据(大屏与运营管理) ====================
 
