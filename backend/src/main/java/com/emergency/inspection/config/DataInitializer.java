@@ -1,6 +1,9 @@
 package com.emergency.inspection.config;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.emergency.inspection.entity.AiAlgorithm;
+import com.emergency.inspection.entity.AiAlgorithmAlarm;
+import com.emergency.inspection.entity.AiOdorStation;
 import com.emergency.inspection.entity.EmergencyEvent;
 import com.emergency.inspection.entity.Firmware;
 import com.emergency.inspection.entity.InspectDemand;
@@ -34,6 +37,9 @@ import com.emergency.inspection.mapper.SysOrgMapper;
 import com.emergency.inspection.mapper.SysRoleMapper;
 import com.emergency.inspection.mapper.SysTenantMapper;
 import com.emergency.inspection.mapper.SysUserMapper;
+import com.emergency.inspection.mapper.AiAlgorithmAlarmMapper;
+import com.emergency.inspection.mapper.AiAlgorithmMapper;
+import com.emergency.inspection.mapper.AiOdorStationMapper;
 import com.emergency.inspection.mapper.WaylineMapper;
 import com.emergency.inspection.service.WaylineService;
 import lombok.RequiredArgsConstructor;
@@ -77,6 +83,9 @@ public class DataInitializer implements CommandLineRunner {
     private final VideoChannelMapper videoChannelMapper;
     private final WaylineMapper waylineMapper;
     private final FirmwareMapper firmwareMapper;
+    private final AiAlgorithmMapper algorithmMapper;
+    private final AiAlgorithmAlarmMapper algoAlarmMapper;
+    private final AiOdorStationMapper odorStationMapper;
 
     /** 目标菜单布局(BIZ 业务菜单 / SYS 系统管理),path 为唯一键 */
     private static final List<SysMenu> MENU_SEED = List.of(
@@ -94,6 +103,7 @@ public class DataInitializer implements CommandLineRunner {
             new SysMenu("需求管理", "/demands", "DocumentChecked", SysMenu.Group.SVC, 3),
             new SysMenu("视频管理", "/videos", "VideoCamera", SysMenu.Group.SVC, 4),
             new SysMenu("飞手管理", "/pilots", "Avatar", SysMenu.Group.SVC, 5),
+            new SysMenu("算法管理", "/algorithms", "Cpu", SysMenu.Group.SVC, 6),
             new SysMenu("人员管理", "/sys/users", "UserFilled", SysMenu.Group.SYS, 1),
             new SysMenu("角色管理", "/sys/roles", "Key", SysMenu.Group.SYS, 2),
             new SysMenu("菜单管理", "/sys/menus", "Menu", SysMenu.Group.SYS, 3),
@@ -110,6 +120,7 @@ public class DataInitializer implements CommandLineRunner {
             // 巡检服务模块是后加的,存量库也补一次(内部自带幂等判断)
             seedServiceData();
             seedDockExtData();
+            seedAlgorithmData();
             return;
         }
         log.info("首次启动,写入演示数据 ...");
@@ -121,6 +132,7 @@ public class DataInitializer implements CommandLineRunner {
         seedBusinessData();
         seedServiceData();
         seedDockExtData();
+        seedAlgorithmData();
 
         log.info("演示数据写入完成:租户 1 / 组织 4 / 菜单 {} / 角色 3 / 用户 3", MENU_SEED.size());
     }
@@ -345,8 +357,138 @@ public class DataInitializer implements CommandLineRunner {
         return f;
     }
 
-    // ==================== 巡检服务演示数据(大屏与运营管理) ====================
+    // ==================== 算法管理演示数据(算法注册 / 臭气站点 / 历史告警) ====================
 
+    private void seedAlgorithmData() {
+        if (algorithmMapper.selectCount(Wrappers.<AiAlgorithm>lambdaQuery()) == 0) {
+            algorithmMapper.insert(algorithm(AiAlgorithm.Code.SMOKE_FIRE, "厂区烟火识别与异常高温点定位",
+                    "无人机视角可见光识别火焰/烟雾,红外镜头同步定位异常高温点;命中后自动录像取证,输出高温点坐标与温度。",
+                    "厂区 / 焚烧线 / 危废暂存库", true, true, AiAlgorithm.Level.ERROR));
+            algorithmMapper.insert(algorithm(AiAlgorithm.Code.ODOR_TRACE, "臭气检测与扩散溯源",
+                    "汇交厂界与库区臭气传感网络读数绘制浓度分布图,结合风速风向动态模拟污染物扩散轨迹,按上风向回溯反推泄漏源。",
+                    "填埋库区 / 调节池 / 罐区 / 厂界", false, false, AiAlgorithm.Level.WARN));
+            algorithmMapper.insert(algorithm(AiAlgorithm.Code.ILLEGAL_DUMP, "非法倾倒识别",
+                    "识别厂区内建筑垃圾/工业固废/危险废物等非法倾倒行为与区域,联动车辆轨迹与停留时长,命中即自动告警。",
+                    "厂区周边 / 库区道路 / 排洪沟", false, false, AiAlgorithm.Level.WARN));
+            algorithmMapper.insert(algorithm(AiAlgorithm.Code.COVER_MEMBRANE, "覆盖膜异常状态识别",
+                    "填埋库区航拍影像自动识别覆盖膜破损、翘起移位、积水下陷、覆土外露等异常并量算面积。",
+                    "填埋一区 / 填埋二区 / 应急调节池", false, false, AiAlgorithm.Level.WARN));
+            algorithmMapper.insert(algorithm(AiAlgorithm.Code.CHIMNEY_EMISSION, "烟囱排放视觉监测",
+                    "识别排气筒白烟/灰烟/黑烟/紫烟/浓黄烟羽并估算不透光度,自动录像取证并记录排放时刻。",
+                    "1#/2#排气筒 / 除臭系统排气筒", false, true, AiAlgorithm.Level.WARN));
+            algorithmMapper.insert(algorithm(AiAlgorithm.Code.LEAK_DETECT, "厂区泄漏检测",
+                    "识别路面含盐废水、罐区/除臭系统围堰渗漏、可燃废液罐区泄漏,量算扩散面积并估算流速。",
+                    "厂区道路 / 罐区围堰 / 废液罐区", false, false, AiAlgorithm.Level.ERROR));
+            log.info("算法注册表写入完成:6 个算法");
+        }
+        if (odorStationMapper.selectCount(Wrappers.<AiOdorStation>lambdaQuery()) == 0) {
+            odorStationMapper.insert(odorStation("OS-01", "填埋一区站", "填埋库区", "116.180000", "39.915000"));
+            odorStationMapper.insert(odorStation("OS-02", "填埋二区站", "填埋库区", "116.178000", "39.911000"));
+            odorStationMapper.insert(odorStation("OS-03", "应急调节池站", "填埋库区", "116.182000", "39.909000"));
+            odorStationMapper.insert(odorStation("OS-04", "罐区站", "罐区", "116.186000", "39.916000"));
+            odorStationMapper.insert(odorStation("OS-05", "除臭系统站", "除臭系统", "116.184000", "39.913000"));
+            odorStationMapper.insert(odorStation("OS-06", "厂界东站", "厂界", "116.192000", "39.913000"));
+            odorStationMapper.insert(odorStation("OS-07", "厂界南站", "厂界", "116.183000", "39.905000"));
+            odorStationMapper.insert(odorStation("OS-08", "办公区站", "办公生活区", "116.188000", "39.919000"));
+            log.info("臭气监测点位写入完成:8 站");
+        }
+        if (algoAlarmMapper.selectCount(Wrappers.<AiAlgorithmAlarm>lambdaQuery()) == 0) {
+            seedAlarmHistory();
+        }
+    }
+
+    private AiAlgorithm algorithm(AiAlgorithm.Code code, String name, String description,
+                                  String scene, boolean requiresIr, boolean videoRecord,
+                                  AiAlgorithm.Level alarmLevel) {
+        AiAlgorithm a = new AiAlgorithm();
+        a.setCode(code);
+        a.setName(name);
+        a.setDescription(description);
+        a.setScene(scene);
+        a.setRequiresIr(requiresIr);
+        a.setVideoRecord(videoRecord);
+        a.setEnabled(true);
+        a.setConfidenceValue(80);
+        a.setAlarmLevel(alarmLevel);
+        a.setRunCount(0);
+        return a;
+    }
+
+    private AiOdorStation odorStation(String code, String name, String area, String lng, String lat) {
+        AiOdorStation s = new AiOdorStation();
+        s.setStationCode(code);
+        s.setStationName(name);
+        s.setArea(area);
+        s.setLongitude(new BigDecimal(lng));
+        s.setLatitude(new BigDecimal(lat));
+        return s;
+    }
+
+    /** 历史告警样例:覆盖全部 6 个算法,一条已处置,其余待处置 */
+    private void seedAlarmHistory() {
+        LocalDateTime now = LocalDateTime.now();
+        algoAlarmMapper.insert(alarm(AiAlgorithm.Code.SMOKE_FIRE, "识别到明火,红外定位异常高温点 412℃",
+                AiAlgorithmAlarm.Level.ERROR, 93, "116.181200", "39.914800", "首钢园区固废处置厂·焚烧线旁",
+                "{\"fireType\":\"FLAME\",\"irMaxTempC\":412,\"ambientTempC\":26,\"tempPointLng\":116.18135,"
+                        + "\"tempPointLat\":39.91492,\"thumbObjectKey\":\"media/DRONE-SIM-0001/algo/history/1-thumb.jpg\"}",
+                "media/DRONE-SIM-0001/algo/history/1-smoke_fire.mp4", 46, now.minusHours(26), null, null, null));
+        AiAlgorithmAlarm handled = alarm(AiAlgorithm.Code.CHIMNEY_EMISSION, "2#排气筒排放浓黄烟,不透光度 82%",
+                AiAlgorithmAlarm.Level.ERROR, 88, "116.185300", "39.916100", "首钢园区固废处置厂·2#排气筒",
+                "{\"smokeColor\":\"浓黄烟\",\"opacityPercent\":82,\"plumeHeightM\":35,\"chimneyId\":\"2#排气筒\","
+                        + "\"thumbObjectKey\":\"media/DRONE-SIM-0001/algo/history/2-thumb.jpg\"}",
+                "media/DRONE-SIM-0001/algo/history/2-chimney_emission.mp4", 62, now.minusHours(22),
+                "系统管理员", "已通知焚烧线降负荷,湿法脱酸塔检修完成,复测不透光度回落至 12%",
+                now.minusHours(20));
+        algoAlarmMapper.insert(handled);
+        algoAlarmMapper.insert(alarm(AiAlgorithm.Code.ILLEGAL_DUMP, "识别到非法倾倒(建筑垃圾),面积约 42 ㎡",
+                AiAlgorithmAlarm.Level.WARN, 85, "116.179800", "39.912300", "首钢园区固废处置厂·厂区西侧围墙外",
+                "{\"dumpType\":\"建筑垃圾\",\"areaM2\":42,\"dwellMinutes\":23,\"vehiclePlate\":\"京A52819\","
+                        + "\"thumbObjectKey\":\"media/DRONE-SIM-0001/algo/history/3-thumb.jpg\"}",
+                null, null, now.minusHours(18), null, null, null));
+        algoAlarmMapper.insert(alarm(AiAlgorithm.Code.COVER_MEMBRANE, "填埋库区覆盖膜破损(约 156 ㎡)",
+                AiAlgorithmAlarm.Level.WARN, 82, "116.180400", "39.915200", "首钢园区固废处置厂·填埋一区",
+                "{\"anomalyType\":\"破损\",\"membraneZone\":\"填埋一区\",\"areaM2\":156,"
+                        + "\"thumbObjectKey\":\"media/DRONE-SIM-0001/algo/history/4-thumb.jpg\"}",
+                null, null, now.minusHours(12), null, null, null));
+        algoAlarmMapper.insert(alarm(AiAlgorithm.Code.LEAK_DETECT, "识别到泄漏(罐区围堰渗漏),扩散面积约 18 ㎡",
+                AiAlgorithmAlarm.Level.WARN, 91, "116.186200", "39.916300", "首钢园区固废处置厂·罐区",
+                "{\"leakType\":\"罐区围堰渗漏\",\"spreadAreaM2\":18,"
+                        + "\"thumbObjectKey\":\"media/DRONE-SIM-0001/algo/history/5-thumb.jpg\"}",
+                null, null, now.minusHours(6), null, null, null));
+        algoAlarmMapper.insert(alarm(AiAlgorithm.Code.ODOR_TRACE, "应急调节池站臭气浓度超标(H2S 0.214 ppm),溯源指向西南风向 214 m",
+                AiAlgorithmAlarm.Level.ERROR, 87, "116.182000", "39.909000", "首钢园区固废处置厂·填埋库区",
+                "{\"stationName\":\"应急调节池站\",\"h2sPpm\":0.214,\"nh3Ppm\":0.83,\"odorUnit\":25,"
+                        + "\"sourceLng\":116.182,\"sourceLat\":39.909,\"backtrackM\":214,\"trajectoryPoints\":12,"
+                        + "\"thumbObjectKey\":\"media/odor/history/6-map.jpg\"}",
+                null, null, now.minusHours(3), null, null, null));
+        log.info("算法告警历史样例写入完成:6 条");
+    }
+
+    private AiAlgorithmAlarm alarm(AiAlgorithm.Code code, String title, AiAlgorithmAlarm.Level level,
+                                   int confidence, String lng, String lat, String address,
+                                   String payloadJson, String videoKey, Integer videoSeconds,
+                                   LocalDateTime occurredAt, String handler, String handleRemark,
+                                   LocalDateTime handleTime) {
+        AiAlgorithmAlarm a = new AiAlgorithmAlarm();
+        a.setAlgorithmCode(code);
+        a.setTitle(title);
+        a.setLevel(level);
+        a.setConfidence(confidence);
+        a.setLongitude(new BigDecimal(lng));
+        a.setLatitude(new BigDecimal(lat));
+        a.setAddress(address);
+        a.setPayloadJson(payloadJson);
+        a.setVideoObjectKey(videoKey);
+        a.setVideoSeconds(videoSeconds);
+        a.setOccurredAt(occurredAt);
+        a.setStatus(handler == null ? AiAlgorithmAlarm.Status.PENDING : AiAlgorithmAlarm.Status.HANDLED);
+        a.setHandler(handler);
+        a.setHandleRemark(handleRemark);
+        a.setHandleTime(handleTime);
+        return a;
+    }
+
+    // ==================== 巡检服务演示数据(大屏与运营管理) ====================
     private void seedServiceData() {
         // 幂等:已有问题数据说明灌过,直接跳过(存量库升级时不会重复插入)
         if (issueMapper.selectCount(Wrappers.<InspectIssue>lambdaQuery()) > 0) {

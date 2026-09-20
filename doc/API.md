@@ -535,3 +535,48 @@ videoByStatus, orderByDept, recentIssues, recentOrders, onlineVideos, mapPoints,
 
 `level`:`NOTICE` 提示 / `WARN` 警告 / `ERROR` 严重(设备数字等级 0/1/2 归一);
 来源为设备 `hms` 事件中的 `hms_list` 逐条落库,事件流里同时留有原始报文。
+
+## 17. 算法管理(识别算法 / 告警闭环 / 臭气溯源)
+
+### 算法注册与配置 `/api/algorithms`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `` | 全量列表(内置 6 个算法,无增删) |
+| PUT | `/{id}` | `{enabled, confidenceValue, alarmLevel}` |
+| POST | `/{id}/run` | 手动执行一次识别,返回命中的告警(停用算法 400) |
+
+内置算法 `code`:`SMOKE_FIRE` 烟火识别(需红外 + 自动录像)/ `ODOR_TRACE` 臭气溯源 /
+`ILLEGAL_DUMP` 非法倾倒 / `COVER_MEMBRANE` 覆盖膜异常 / `CHIMNEY_EMISSION` 烟囱排放(自动录像)/
+`LEAK_DETECT` 泄漏检测。`confidenceValue` 50-99;`alarmLevel`:`NOTICE/WARN/ERROR`。
+识别入口有二:① 航线任务 RUNNING 时后台每 20s 自动识别(每算法 120s 节流,位置取飞行器 OSD 遥测);
+② 控制台手动 `run`。命中即落告警,录像算法生成 `videoObjectKey`(15-90s)+ 取证时刻;
+明火 / 危废 / 可燃泄漏 / 黑烟浓黄烟 / 大面积异常自动升级 ERROR。
+
+### 算法告警 `/api/algo-alarms`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/page` | 筛选:`algorithmCode`、`level`、`status`、`startTime/endTime`、`keyword`(标题/位置) |
+| GET | `/{id}` | 详情,`payload` 已解析为对象(算法私有结论) |
+| POST | `/{id}/handle` | `{remark}` 处置意见必填;PENDING → HANDLED,重复处置 400 |
+
+`level` 与 HMS 同口径;`status`:`PENDING` 待处置 / `HANDLED` 已处置(记录 handler / handleTime)。
+`payload` 常见键:`fireType` 烟火类型、`irMaxTempC` 红外最高温、`smokeColor` 烟羽颜色、
+`opacityPercent` 不透光度、`dumpType` 倾倒类型、`anomalyType` 膜面异常、`leakType` 泄漏类型、
+`areaM2` 面积、`backtrackM` 溯源回溯距离等。
+
+### 臭气检测与扩散溯源 `/api/odor`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/map` | 分布图:8 个监测站最新读数(含 `level` 分级)+ 区域风 + 阈值 |
+| GET | `/dispersion` | 扩散模拟与溯源(超标时顺带落一条 ODOR_TRACE 告警,10 分钟去重) |
+| PUT | `/wind` | `{speed 0-17, direction 0-359}` 覆盖区域风并立即重算一批读数 |
+
+判定阈值:H2S ≥ 0.05 ppm 警告 / ≥ 0.2 ppm 严重(`level`:NORMAL/WARN/ERROR)。
+读数批次 180s 过期自动刷新,60% 概率出现泄漏事件(候选:应急调节池 / 罐区 / 填埋二区,
+沿下风向按 `exp(-dist/400)` × 风向对齐度衰减)。溯源:浓度前二加权质心沿上风向回溯
+`clamp(80~600m)` 定源,再沿下风向输出 12 个采样点的高斯烟羽轨迹
+(`widthM` 烟羽宽度、`h2sPpm` 中心线浓度指数衰减),并给出受影响站点按浓度排序与距源距离;
+`source.uncertaintyM` 为回溯距离 30% 的不确定半径。

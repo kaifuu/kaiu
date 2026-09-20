@@ -29,6 +29,7 @@ const PAGES = [
   ['/demands', '需求管理'],
   ['/videos', '视频管理'],
   ['/pilots', '飞手管理'],
+  ['/algorithms', '算法管理'],
   ['/sys/users', '人员管理'],
   ['/sys/roles', '角色管理'],
   ['/sys/menus', '菜单管理'],
@@ -323,8 +324,47 @@ if (await droneRow.count()) {
   bad('无人机控制页', '列表中没有无人机')
 }
 
+// 算法管理:算法卡配置 + 手动执行识别 + 臭气分布图与溯源
+console.log('\n[7] 交互:算法管理')
+await page.goto(BASE + '/#/algorithms', { waitUntil: 'networkidle' })
+await page.waitForTimeout(1500)
+{
+  const cards = await page.locator('.algo-card').count()
+  const switches = await page.locator('.algo-card .el-switch').count()
+  const alarmRows = await page.locator('.table-panel .el-table__body tr').count()
+  cards === 6 && switches === 6
+    ? ok(`算法配置:6 张算法卡(含启停开关),告警记录 ${alarmRows} 行`)
+    : bad('算法配置', `卡片=${cards} 开关=${switches} 告警行=${alarmRows}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-algo-cards.png`, fullPage: true })
+  i++
+
+  // 手动执行一次识别:命中后应弹成功消息并刷新告警表
+  await page.locator('.algo-card button:has-text("执行识别")').first().click()
+  await page.waitForTimeout(2000)
+  const runMsg = await page.locator('.el-message:has-text("命中")').count()
+  runMsg > 0
+    ? ok('手动执行识别:命中并提示(含录像取证标记)')
+    : bad('手动执行识别', '未出现命中消息')
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-algo-run.png`, fullPage: true })
+  i++
+
+  // 臭气分布图与溯源:站点着色 + 烟羽轨迹 + 源点标记 + 改风重算
+  await page.locator('button:has-text("臭气分布图与溯源")').first().click()
+  await page.waitForTimeout(2500)
+  const stations = await page.locator('.odor-map-wrap .station').count()
+  const plume = await page.locator('.odor-map-wrap line').count()
+  const windBadge = await page.locator('.odor-map-wrap .wind-badge').count()
+  stations === 8 && windBadge === 1 && plume > 0
+    ? ok(`臭气分布图:8 个监测站点 + 风向标 + 烟羽/源点绘制(${plume} 线元)`)
+    : bad('臭气分布图', `站点=${stations} 风向标=${windBadge} 线元=${plume}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-algo-odor.png` })
+  i++
+  await page.locator('.el-dialog__headerbtn').first().click()
+  await page.waitForTimeout(600)
+}
+
 // 服务大屏:独立全屏路由,不套 Layout,故单独校验
-console.log('\n[7] 服务大屏')
+console.log('\n[8] 服务大屏')
 await page.goto(BASE + '/#/screen', { waitUntil: 'networkidle' })
 await page.waitForTimeout(3000)
 const kpiRings = await page.locator('.kpi-ring').count()

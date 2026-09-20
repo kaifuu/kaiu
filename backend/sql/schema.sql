@@ -739,3 +739,87 @@ CREATE TABLE IF NOT EXISTS device_hms (
 COMMENT ON TABLE device_hms        IS '机场健康告警:hms 事件中的 hms_list 逐条落库';
 COMMENT ON COLUMN device_hms.level IS 'NOTICE 提示 / WARN 警告 / ERROR 严重';
 CREATE INDEX IF NOT EXISTS idx_hms_sn ON device_hms (device_sn, create_time DESC);
+
+-- ---------------- 算法管理:算法注册与运行配置 ----------------
+CREATE TABLE IF NOT EXISTS ai_algorithm (
+    id               BIGSERIAL     PRIMARY KEY,
+    code             VARCHAR(32)   NOT NULL,
+    name             VARCHAR(64)   NOT NULL,
+    description      VARCHAR(500),
+    scene            VARCHAR(100),
+    requires_ir      BOOLEAN       NOT NULL DEFAULT FALSE,
+    video_record     BOOLEAN       NOT NULL DEFAULT FALSE,
+    enabled          BOOLEAN       NOT NULL DEFAULT TRUE,
+    confidence_value INTEGER       NOT NULL DEFAULT 80,
+    alarm_level      VARCHAR(16)   NOT NULL DEFAULT 'WARN',
+    last_run_at      TIMESTAMP,
+    run_count        INTEGER       NOT NULL DEFAULT 0,
+    create_time      TIMESTAMP     NOT NULL DEFAULT NOW(),
+    update_time      TIMESTAMP,
+    CONSTRAINT uk_ai_algorithm_code UNIQUE (code),
+    CONSTRAINT ck_ai_algo_level CHECK (alarm_level IN ('NOTICE', 'WARN', 'ERROR'))
+);
+COMMENT ON TABLE  ai_algorithm             IS '算法管理:识别算法注册表,配置启停 / 置信度门槛 / 告警等级';
+COMMENT ON COLUMN ai_algorithm.requires_ir  IS '是否依赖红外镜头(高温点定位)';
+COMMENT ON COLUMN ai_algorithm.video_record IS '识别命中后是否自动录像取证';
+CREATE INDEX IF NOT EXISTS idx_ai_algo_code ON ai_algorithm (code);
+
+-- ---------------- 算法告警记录(识别命中即落一条,含取证与处置) ----------------
+CREATE TABLE IF NOT EXISTS ai_algorithm_alarm (
+    id               BIGSERIAL     PRIMARY KEY,
+    algorithm_code   VARCHAR(32)   NOT NULL,
+    title            VARCHAR(200)  NOT NULL,
+    level            VARCHAR(16)   NOT NULL,
+    confidence       INTEGER,
+    device_sn        VARCHAR(64),
+    dock_name        VARCHAR(64),
+    flight_id        VARCHAR(64),
+    longitude        NUMERIC(10, 6),
+    latitude         NUMERIC(10, 6),
+    address          VARCHAR(255),
+    payload_json     VARCHAR(2000),
+    video_object_key VARCHAR(500),
+    video_seconds    INTEGER,
+    occurred_at      TIMESTAMP     NOT NULL,
+    status           VARCHAR(16)   NOT NULL DEFAULT 'PENDING',
+    handler          VARCHAR(64),
+    handle_remark    VARCHAR(500),
+    handle_time      TIMESTAMP,
+    create_time      TIMESTAMP     NOT NULL DEFAULT NOW(),
+    update_time      TIMESTAMP,
+    CONSTRAINT ck_algo_alarm_level  CHECK (level IN ('NOTICE', 'WARN', 'ERROR')),
+    CONSTRAINT ck_algo_alarm_status CHECK (status IN ('PENDING', 'HANDLED'))
+);
+COMMENT ON TABLE  ai_algorithm_alarm           IS '算法告警:识别命中记录,含算法私有结论 / 录像取证 / 处置闭环';
+COMMENT ON COLUMN ai_algorithm_alarm.status     IS 'PENDING 待处置 / HANDLED 已处置';
+CREATE INDEX IF NOT EXISTS idx_algo_alarm_code ON ai_algorithm_alarm (algorithm_code, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_algo_alarm_time ON ai_algorithm_alarm (occurred_at DESC);
+
+-- ---------------- 臭气监测点位(分布图与溯源的传感网络) ----------------
+CREATE TABLE IF NOT EXISTS ai_odor_station (
+    id           BIGSERIAL     PRIMARY KEY,
+    station_code VARCHAR(32)   NOT NULL,
+    station_name VARCHAR(64)   NOT NULL,
+    area         VARCHAR(64),
+    longitude    NUMERIC(10, 6) NOT NULL,
+    latitude     NUMERIC(10, 6) NOT NULL,
+    create_time  TIMESTAMP     NOT NULL DEFAULT NOW(),
+    update_time  TIMESTAMP,
+    CONSTRAINT uk_odor_station_code UNIQUE (station_code)
+);
+COMMENT ON TABLE ai_odor_station IS '臭气监测点位:厂区/填埋库区/罐区布设的恶臭传感站';
+
+-- ---------------- 臭气读数(按批次刷新,同批共享区域风向风速) ----------------
+CREATE TABLE IF NOT EXISTS ai_odor_reading (
+    id              BIGSERIAL    PRIMARY KEY,
+    station_id      BIGINT       NOT NULL,
+    h2s_ppm         NUMERIC(8, 3) NOT NULL,
+    nh3_ppm         NUMERIC(8, 3) NOT NULL,
+    odor_unit       INTEGER      NOT NULL,
+    wind_speed      NUMERIC(6, 2) NOT NULL,
+    wind_direction  INTEGER      NOT NULL,
+    read_time       TIMESTAMP    NOT NULL,
+    create_time     TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+COMMENT ON COLUMN ai_odor_reading.wind_direction IS '风向(度):风的来向,0=北,顺时针';
+CREATE INDEX IF NOT EXISTS idx_odor_reading_station ON ai_odor_reading (station_id, read_time DESC);

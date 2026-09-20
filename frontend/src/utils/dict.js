@@ -263,6 +263,29 @@ export const HMS_LEVEL = {
   ERROR: { label: '严重', tagType: 'danger' }
 }
 
+/* ---------------- 算法管理(识别算法 / 告警闭环) ---------------- */
+export const ALGO_CODE = {
+  SMOKE_FIRE: { label: '烟火识别', tagType: 'danger' },
+  ODOR_TRACE: { label: '臭气溯源', tagType: 'warning' },
+  ILLEGAL_DUMP: { label: '非法倾倒', tagType: 'warning' },
+  COVER_MEMBRANE: { label: '覆盖膜异常', tagType: 'primary' },
+  CHIMNEY_EMISSION: { label: '烟囱排放', tagType: 'info' },
+  LEAK_DETECT: { label: '泄漏检测', tagType: 'danger' }
+}
+
+/** 算法告警等级:与 HMS 同口径 */
+export const ALGO_LEVEL = {
+  NOTICE: { label: '提示', tagType: 'info' },
+  WARN: { label: '警告', tagType: 'warning' },
+  ERROR: { label: '严重', tagType: 'danger' }
+}
+
+/** 算法告警处置状态 */
+export const ALGO_STATUS = {
+  PENDING: { label: '待处置', tagType: 'danger' },
+  HANDLED: { label: '已处置', tagType: 'success' }
+}
+
 /* ---------------- 巡检服务(问题 / 工单 / 需求 / 飞手 / 视频) ---------------- */
 export const ISSUE_TYPE = {
   ILLEGAL_BUILD: { label: '疑似违建', tagType: 'danger' },

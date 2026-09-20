@@ -29,6 +29,7 @@ const routes = [
       { path: 'demands', name: 'demands', component: () => import('../views/svc/DemandList.vue'), meta: { title: '需求管理' } },
       { path: 'videos', name: 'videos', component: () => import('../views/svc/VideoList.vue'), meta: { title: '视频管理' } },
       { path: 'pilots', name: 'pilots', component: () => import('../views/svc/PilotList.vue'), meta: { title: '飞手管理' } },
+      { path: 'algorithms', name: 'algorithms', component: () => import('../views/algo/AlgorithmList.vue'), meta: { title: '算法管理' } },
       // ---- 系统管理 ----
       { path: 'sys/users', name: 'sys-users', component: () => import('../views/sys/SysUserList.vue'), meta: { title: '人员管理' } },
       { path: 'sys/roles', name: 'sys-roles', component: () => import('../views/sys/SysRoleList.vue'), meta: { title: '角色管理' } },

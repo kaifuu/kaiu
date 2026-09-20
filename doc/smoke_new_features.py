@@ -318,6 +318,73 @@ r = api("GET", "/devices/%d/hms/page?page=1&size=10" % sim_dock["id"])
 ok("HMS 告警入库", r.get("code") == 200 and r["data"]["total"] >= 1, r["data"]["total"])
 ok("HMS 含等级与描述", all(x["level"] in ("NOTICE", "WARN", "ERROR") and x["code"] for x in r["data"]["rows"]))
 
+print("\n[13] 算法管理(注册 / 配置 / 执行 / 告警闭环 / 臭气溯源)")
+algos = data_of(api("GET", "/algorithms")) or []
+ok("算法注册 6 个", len(algos) == 6, len(algos))
+codes = {a["code"] for a in algos}
+ok("六类算法齐全", codes == {"SMOKE_FIRE", "ODOR_TRACE", "ILLEGAL_DUMP",
+    "COVER_MEMBRANE", "CHIMNEY_EMISSION", "LEAK_DETECT"}, codes)
+smoke_algo = next(a for a in algos if a["code"] == "SMOKE_FIRE")
+ok("烟火算法需红外 + 自动录像", smoke_algo["requiresIr"] is True and smoke_algo["videoRecord"] is True)
+ok("算法等级口径合法", all(a["alarmLevel"] in ("NOTICE", "WARN", "ERROR") for a in algos))
+
+r = api("PUT", "/algorithms/%d" % smoke_algo["id"],
+        {"enabled": False, "confidenceValue": 85, "alarmLevel": "WARN"})
+ok("修改算法配置", r.get("code") == 200, r)
+r = api("POST", "/algorithms/%d/run" % smoke_algo["id"])
+ok("停用算法拒绝执行", r.get("code") != 200, r)
+r = api("PUT", "/algorithms/%d" % smoke_algo["id"],
+        {"enabled": True, "confidenceValue": 85, "alarmLevel": "WARN"})
+back = data_of(api("GET", "/algorithms"))
+smoke_algo = next(a for a in back if a["id"] == smoke_algo["id"])
+ok("配置保存可回读", smoke_algo["enabled"] is True and smoke_algo["confidenceValue"] == 85
+   and smoke_algo["alarmLevel"] == "WARN")
+
+alarm = data_of(api("POST", "/algorithms/%d/run" % smoke_algo["id"]))
+ok("手动执行生成告警", alarm and alarm.get("title") and alarm.get("confidence", 0) >= 85, alarm)
+ok("烟火告警录像取证", bool(alarm.get("videoObjectKey")) and (alarm.get("videoSeconds") or 0) >= 15, alarm)
+ok("置信度取值合法", 85 <= alarm.get("confidence", 0) <= 99)
+
+r = api("GET", "/algo-alarms/page?page=1&size=10&algorithmCode=SMOKE_FIRE")
+ok("告警分页按算法筛选", r.get("code") == 200 and r["data"]["total"] >= 2, r["data"]["total"])
+ok("分页回填算法名称", all(x.get("algorithmName") for x in r["data"]["rows"]))
+
+detail = data_of(api("GET", "/algo-alarms/%d" % alarm["id"]))
+ok("告警详情解析 payload", isinstance(detail.get("payload"), dict)
+   and detail["payload"].get("irMaxTempC", 0) > 0, detail.get("payload"))
+r = api("POST", "/algo-alarms/%d/handle" % alarm["id"], {"remark": "冒烟处置:现场核实完毕"})
+ok("处置告警闭环", r.get("code") == 200, r)
+r = api("POST", "/algo-alarms/%d/handle" % alarm["id"], {"remark": "重复处置应被拒"})
+ok("重复处置被拒", r.get("code") != 200, r)
+
+odor_map = data_of(api("GET", "/odor/map")) or {}
+ok("臭气分布图 8 站", len(odor_map.get("stations") or []) == 8, len(odor_map.get("stations") or []))
+ok("分布图含风场与阈值", odor_map.get("wind", {}).get("speed") is not None
+   and odor_map.get("thresholds", {}).get("warnH2sPpm") == 0.05)
+r = api("PUT", "/odor/wind", {"speed": 5.0, "direction": 90})
+ok("改风立即生效且取一位小数", r.get("code") == 200 and r["data"]["speed"] == 5.0
+   and r["data"]["direction"] == 90, r.get("data"))
+disp = {}
+for wd in (90, 135, 180, 225):
+    disp = data_of(api("GET", "/odor/dispersion")) or {}
+    if disp.get("active"):
+        break
+    # 强制批次幅度随机,极小概率全部低于限值:换一个风向再触发一次
+    api("PUT", "/odor/wind", {"speed": 5.0, "direction": wd})
+ok("改风后触发超标溯源", disp.get("active") is True, disp.get("message"))
+ok("溯源产出源点与回溯距离", isinstance(disp.get("source"), dict)
+   and disp["source"].get("backtrackM", 0) >= 80, disp.get("source"))
+ok("扩散轨迹 12 个采样点", len(disp.get("trajectory") or []) == 12)
+ok("受影响站点含距源距离", all(x.get("distanceToSourceM") is not None
+   for x in disp.get("affectedStations") or []))
+r = api("GET", "/algo-alarms/page?page=1&size=5&algorithmCode=ODOR_TRACE")
+ok("臭气溯源落告警", r.get("code") == 200 and r["data"]["total"] >= 1, r["data"]["total"])
+
+# 恢复演示默认配置与风场
+api("PUT", "/algorithms/%d" % smoke_algo["id"],
+    {"enabled": True, "confidenceValue": 80, "alarmLevel": "ERROR"})
+api("PUT", "/odor/wind", {"speed": 2.8, "direction": 135})
+
 # ---------- 清理 ----------
 call("PUT", "/devices/%d/ai/config" % sim_dock["id"], {
     "enabled": False, "followEnabled": False, "confidenceMode": "CUSTOM",
