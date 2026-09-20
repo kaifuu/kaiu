@@ -338,8 +338,8 @@ await page.waitForTimeout(1500)
   await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-algo-cards.png`, fullPage: true })
   i++
 
-  // 手动执行一次识别:命中后应弹成功消息并刷新告警表
-  await page.locator('.algo-card button:has-text("执行识别")').first().click()
+  // 手动执行一次识别:命中后应弹成功消息并刷新告警表(选启用中的算法卡,停用卡按钮本就禁用)
+  await page.locator('.algo-card:not(.off) button:has-text("执行识别")').first().click()
   await page.waitForTimeout(2000)
   const runMsg = await page.locator('.el-message:has-text("命中")').count()
   runMsg > 0
