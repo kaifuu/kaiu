@@ -5,6 +5,7 @@ import com.emergency.inspection.dji.DjiTopics;
 import com.emergency.inspection.entity.DeviceEvent;
 import com.emergency.inspection.gateway.mqtt.MqttMessageListener;
 import com.emergency.inspection.service.DeviceService;
+import com.emergency.inspection.service.LiveStreamService;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +14,7 @@ import org.springframework.stereotype.Component;
 /**
  * 设备属性上报:
  * - osd   定频遥测(0.5Hz)→ 覆盖式写入 device_osd
- * - state 状态变化 → 记录事件
+ * - state 状态变化 → 记录事件;其中 live_capacity(直播能力)另存直播能力表
  *
  * 报文形态有两种:多数版本把属性放在 data 里,也有版本直接平铺在根节点,
  * 这里统一取「根节点里有 data 对象就用 data,否则用根节点」。
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Component;
 public class DjiOsdHandler implements MqttMessageListener {
 
     private final DeviceService deviceService;
+    private final LiveStreamService liveStreamService;
 
     @Override
     public boolean supports(String topic) {
@@ -42,6 +44,11 @@ public class DjiOsdHandler implements MqttMessageListener {
 
         if ("osd".equals(parts.suffix())) {
             deviceService.saveOsd(sn, props);
+        } else if (props.has("live_capacity")) {
+            // 直播能力清单:单独存能力表,事件流只留一条摘要,避免清单原文刷屏
+            liveStreamService.onCapacity(sn, props.get("live_capacity"));
+            deviceService.recordEvent(sn, DeviceEvent.EventType.OTHER, "state", DeviceEvent.Level.INFO,
+                    "直播能力上报", props);
         } else {
             deviceService.recordEvent(sn, DeviceEvent.EventType.OTHER, "state", DeviceEvent.Level.INFO,
                     "设备状态变更", props);

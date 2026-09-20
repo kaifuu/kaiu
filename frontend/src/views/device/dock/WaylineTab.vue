@@ -46,7 +46,31 @@
         </el-radio-group>
         <el-date-picker v-if="dispatch.jobType === 'TIMED'" v-model="dispatch.executeTime" type="datetime"
                         value-format="YYYY-MM-DD HH:mm:ss" placeholder="选择执行时间" style="width: 195px" />
+        <span class="rth-field">返航
+          <el-input-number v-model="dispatch.rthAltitude" :min="30" :max="500" :controls="false"
+                           style="width: 72px" />
+          m
+        </span>
         <el-button type="primary" :loading="dispatching" :disabled="offline" @click="dispatchJob">下发任务</el-button>
+        <el-button type="danger" plain :disabled="offline" @click="returnHomeNow">一键返航</el-button>
+        <el-button type="warning" plain :disabled="offline" @click="inFlightDispatch">空中下发</el-button>
+      </div>
+
+      <!-- 条件任务配置区:替代执行时间选择器 -->
+      <div class="cond-bar" v-if="dispatch.jobType === 'CONDITION'">
+        <span class="cond-label">就绪条件</span>
+        <span class="cond-item">电量 ≥
+          <el-input-number v-model="dispatch.batteryCapacity" :min="50" :max="100" :controls="false"
+                           style="width: 64px" /> %
+        </span>
+        <span class="cond-item">时间窗
+          <el-date-picker v-model="dispatch.beginTime" type="datetime" placeholder="起始(可选)"
+                          value-format="YYYY-MM-DD HH:mm:ss" style="width: 185px" />
+          ~
+          <el-date-picker v-model="dispatch.endTime" type="datetime" placeholder="截止(可选)"
+                          value-format="YYYY-MM-DD HH:mm:ss" style="width: 185px" />
+        </span>
+        <span class="dim-tip">条件满足后设备回报 flighttask_ready 自动执行</span>
       </div>
 
       <el-table :data="jobs" v-loading="jobLoading" stripe size="small" height="100%" @sort-change="onSort">
@@ -62,6 +86,13 @@
           <template #default="{ row }">
             <el-tag size="small" :type="dictTag(WAYLINE_JOB_TYPE, row.jobType)" effect="plain">
               {{ dictLabel(WAYLINE_JOB_TYPE, row.jobType) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="jobChannel" label="通道" width="70">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.jobChannel === 'IN_FLIGHT' ? 'warning' : 'info'" effect="plain">
+              {{ row.jobChannel === 'IN_FLIGHT' ? '空中' : '常规' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -83,13 +114,20 @@
         <el-table-column prop="mediaCount" label="媒体" width="56" align="center">
           <template #default="{ row }">{{ row.mediaCount ?? 0 }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="128" fixed="right">
+        <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
-            <template v-if="canResume(row)">
-              <el-button link type="warning" size="small" :disabled="offline" @click="resumeJob(row)">断点续飞</el-button>
-            </template>
+            <el-button v-if="canResume(row)" link type="warning" size="small"
+                       :disabled="offline" @click="resumeJob(row)">断点续飞</el-button>
+            <el-button v-if="canPause(row)" link type="warning" size="small"
+                       :disabled="offline" @click="pauseJob(row)">暂停</el-button>
+            <el-button v-if="canHover(row)" link type="warning" size="small"
+                       :disabled="offline" @click="hoverJob(row)">悬停</el-button>
+            <el-button v-if="canRecovery(row)" link type="warning" size="small"
+                       :disabled="offline" @click="recoverJob(row)">恢复</el-button>
             <el-button v-if="canCancel(row)" link type="danger" size="small"
                        @click="cancelJob(row)">取消</el-button>
+            <el-button v-if="canShowRth(row)" link type="primary" size="small"
+                       @click="showRthTrack(row)">返航轨迹</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -179,6 +217,19 @@
         <el-button type="primary" :loading="dialog.saving" @click="saveWayline">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 返航轨迹:return_home_info 事件上报的规划点 -->
+    <el-dialog v-model="rthDialog.visible" title="返航轨迹" width="560px">
+      <p class="rth-tip" v-if="rthDialog.job">
+        任务「{{ rthDialog.job.waylineName || rthDialog.job.flightId }}」共 {{ rthDialog.points.length }} 个规划点
+      </p>
+      <el-table :data="rthDialog.points" size="small" max-height="360" border>
+        <el-table-column type="index" label="#" width="46" align="center" />
+        <el-table-column prop="longitude" label="经度" />
+        <el-table-column prop="latitude" label="纬度" />
+        <el-table-column prop="height" label="高度(m)" width="100" align="right" />
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
@@ -202,7 +253,10 @@ const wlLoading = ref(false)
 
 /* ---------- 任务下发 ---------- */
 const dispatching = ref(false)
-const dispatch = reactive({ waylineId: null, jobType: 'IMMEDIATE', executeTime: '' })
+const dispatch = reactive({
+  waylineId: null, jobType: 'IMMEDIATE', executeTime: '',
+  rthAltitude: 120, batteryCapacity: 80, beginTime: '', endTime: ''
+})
 
 /* ---------- 任务列表 ---------- */
 const jobs = ref([])
@@ -214,10 +268,16 @@ const jobSort = reactive({ sortBy: '', direction: '' })
 const dialog = reactive({ visible: false, saving: false, form: { waypoints: [] } })
 
 /** 活跃(可取消)状态 */
-const ACTIVE_JOB = new Set(['SENT', 'READY', 'QUEUED', 'RUNNING'])
+const ACTIVE_JOB = new Set(['SENT', 'READY', 'QUEUED', 'RUNNING', 'PAUSED'])
 const canCancel = (row) => ACTIVE_JOB.has(row.status)
 /** 失败/取消且设备带回断点信息才可续飞 */
 const canResume = (row) => (row.status === 'FAILED' || row.status === 'CANCELED') && !!row.breakpointJson
+/** 暂停 / 悬停 / 恢复:常规通道走 flighttask_pause / recovery,空中通道走 in-flight 系列 */
+const canPause = (row) => row.status === 'RUNNING' && row.jobChannel !== 'IN_FLIGHT'
+const canHover = (row) => row.status === 'RUNNING' && row.jobChannel === 'IN_FLIGHT'
+const canRecovery = (row) => row.status === 'PAUSED'
+/** 已完成且设备上报过返航轨迹才可查看 */
+const canShowRth = (row) => row.status === 'SUCCESS' && !!row.returnHomeJson
 
 const progressOf = (row) => Math.min(100, Math.max(0, Number(row.progress) || 0))
 const progressColor = (row) =>
@@ -283,12 +343,52 @@ async function dispatchJob() {
       waylineId: dispatch.waylineId,
       dockId: props.dock.id,
       jobType: dispatch.jobType,
-      executeTime: dispatch.jobType === 'TIMED' ? dispatch.executeTime : undefined
+      executeTime: dispatch.jobType === 'TIMED' ? dispatch.executeTime : undefined,
+      rthAltitude: dispatch.rthAltitude,
+      readyConditionsJson: dispatch.jobType === 'CONDITION' ? buildReadyConditions() : undefined
     })
     ElMessage.success('航线任务已下发')
     jobPager.page = 1
     loadJobs()
   } finally { dispatching.value = false }
+}
+
+/** 条件任务就绪条件:只含有值字段,时间为毫秒时间戳 */
+function buildReadyConditions() {
+  const cond = { battery_capacity: dispatch.batteryCapacity }
+  if (dispatch.beginTime) cond.begin_time = new Date(dispatch.beginTime).getTime()
+  if (dispatch.endTime) cond.end_time = new Date(dispatch.endTime).getTime()
+  return JSON.stringify(cond)
+}
+
+/** 一键返航:优先执行中的任务,否则取最近的排队 / 执行 / 暂停任务 */
+async function returnHomeNow() {
+  const target = jobs.value.find((j) => j.status === 'RUNNING')
+    || jobs.value.find((j) => ['QUEUED', 'RUNNING', 'PAUSED'].includes(j.status))
+  if (!target) return ElMessage.warning('当前没有执行中的任务')
+  try {
+    await ElMessageBox.confirm(
+      `确认对任务「${target.waylineName || target.flightId}」一键返航?飞行器将中止任务并自动返航`,
+      '一键返航', { type: 'warning', confirmButtonText: '返航', cancelButtonText: '再想想' })
+  } catch (e) { return }
+  await http.post(`/wayline-jobs/${target.id}/return-home`)
+  ElMessage.success('已发起一键返航')
+  loadJobs()
+}
+
+/** 空中下发:跳过 prepare/execute,直接向飞行中的飞行器投递选中航线 */
+async function inFlightDispatch() {
+  if (!dispatch.waylineId) return ElMessage.warning('请先选择航线')
+  const wayline = waylines.value.find((w) => w.id === dispatch.waylineId)
+  try {
+    await ElMessageBox.confirm(
+      `确认空中下发航线「${wayline?.name || ''}」?将直接投递给飞行中的飞行器`,
+      '空中下发', { type: 'warning', confirmButtonText: '下发', cancelButtonText: '再想想' })
+  } catch (e) { return }
+  await http.post('/wayline-jobs/in-flight', { dockId: props.dock.id, waylineId: dispatch.waylineId })
+  ElMessage.success('空中下发成功,飞行器已接收新航线')
+  jobPager.page = 1
+  loadJobs()
 }
 
 async function cancelJob(row) {
@@ -305,6 +405,36 @@ async function resumeJob(row) {
   await http.post(`/wayline-jobs/${row.id}/resume`)
   ElMessage.success('已发起断点续飞')
   loadJobs()
+}
+
+/* ---------- 暂停 / 恢复 / 悬停(Dock 3) ---------- */
+async function pauseJob(row) {
+  await http.post(`/wayline-jobs/${row.id}/pause`)
+  ElMessage.success('任务已暂停')
+  loadJobs()
+}
+
+/** 恢复已暂停的任务:常规通道 recovery / 空中通道 in-flight/recover */
+async function recoverJob(row) {
+  await http.post(`/wayline-jobs/${row.id}/${row.jobChannel === 'IN_FLIGHT' ? 'in-flight/recover' : 'recovery'}`)
+  ElMessage.success('任务已恢复执行')
+  loadJobs()
+}
+
+/** 空中下发任务的悬停(in_flight_wayline_stop) */
+async function hoverJob(row) {
+  await http.post(`/wayline-jobs/${row.id}/in-flight/stop`)
+  ElMessage.success('已发起空中悬停')
+  loadJobs()
+}
+
+/* ---------- 返航轨迹 ---------- */
+const rthDialog = reactive({ visible: false, job: null, points: [] })
+
+function showRthTrack(row) {
+  rthDialog.job = row
+  rthDialog.points = parseIdList(row.returnHomeJson)
+  rthDialog.visible = true
 }
 
 /* ---------- 航线库维护 ---------- */
@@ -385,6 +515,23 @@ async function removeWayline(id) {
 }
 .toolbar { display: flex; gap: 10px; padding: 2px 0 10px; flex-wrap: wrap; align-items: center; }
 .pager-row { display: flex; justify-content: flex-end; padding: 10px 0 2px; flex-shrink: 0; }
+
+/* 返航高度输入:与工具栏同行,弱化为辅助字段 */
+.rth-field { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-dim); }
+
+/* 条件任务配置区:类型切到「条件」时出现 */
+.cond-bar {
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  padding: 6px 10px; margin-bottom: 10px;
+  background: #fffdf5; border: 1px solid #f5e6b8; border-radius: 8px;
+  font-size: 12.5px; color: var(--text-dim);
+}
+.cond-label { font-weight: 600; color: var(--text); }
+.cond-item { display: inline-flex; align-items: center; gap: 6px; }
+.dim-tip { font-size: 11.5px; color: var(--text-faint); }
+
+/* 返航轨迹弹窗提示行 */
+.rth-tip { margin: 0 0 10px; font-size: 13px; color: var(--text-dim); }
 
 .wl-name { font-weight: 600; }
 .mono { font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; color: var(--primary); }

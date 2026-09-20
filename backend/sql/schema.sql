@@ -484,11 +484,15 @@ CREATE TABLE IF NOT EXISTS wayline_job (
     wayline_id      BIGINT,
     wayline_name    VARCHAR(64),
     job_type        VARCHAR(16)  NOT NULL DEFAULT 'IMMEDIATE',
+    job_channel     VARCHAR(16)  NOT NULL DEFAULT 'FLIGHTTASK',
     execute_time    TIMESTAMP,
     status          VARCHAR(16)  NOT NULL DEFAULT 'SENT',
     progress        INTEGER      NOT NULL DEFAULT 0,
     current_step    INTEGER,
     breakpoint_json TEXT,
+    ready_conditions_json TEXT,
+    rth_altitude    INTEGER,
+    return_home_json TEXT,
     media_count     INTEGER      NOT NULL DEFAULT 0,
     error_msg       VARCHAR(255),
     dispatched_at   TIMESTAMP,
@@ -497,8 +501,9 @@ CREATE TABLE IF NOT EXISTS wayline_job (
     create_time     TIMESTAMP    NOT NULL DEFAULT NOW(),
     update_time     TIMESTAMP,
     CONSTRAINT uk_wayline_job_flight UNIQUE (flight_id),
-    CONSTRAINT ck_wayline_job_type   CHECK (job_type IN ('IMMEDIATE', 'TIMED')),
-    CONSTRAINT ck_wayline_job_status CHECK (status IN ('SENT', 'READY', 'QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELED'))
+    CONSTRAINT ck_wayline_job_type   CHECK (job_type IN ('IMMEDIATE', 'TIMED', 'CONDITION')),
+    CONSTRAINT ck_wayline_job_channel CHECK (job_channel IN ('FLIGHTTASK', 'IN_FLIGHT')),
+    CONSTRAINT ck_wayline_job_status CHECK (status IN ('SENT', 'READY', 'QUEUED', 'RUNNING', 'PAUSED', 'SUCCESS', 'FAILED', 'CANCELED'))
 );
 COMMENT ON TABLE  wayline_job            IS '航线飞行任务:云端经 flighttask_prepare / execute 下发,进度由 flighttask_progress 事件驱动';
 COMMENT ON COLUMN wayline_job.flight_id  IS '任务事务 id,云端生成,设备进度上报时带回';
@@ -628,3 +633,109 @@ COMMENT ON COLUMN video_channel.channel_type IS 'LIVE 直播 / PLAYBACK 回放';
 COMMENT ON COLUMN video_channel.protocol     IS 'RTMP / FLV / HLS / GB28181 / WEBRTC';
 COMMENT ON COLUMN video_channel.status       IS 'ONLINE 在线 / OFFLINE 离线';
 CREATE INDEX IF NOT EXISTS idx_video_status ON video_channel (status);
+
+-- ============================ Dock 3 能力扩展(直播 / 媒体 / 航线增强 / 健康告警) ============================
+
+-- 航线任务表扩展:存量库补列 + 约束扩容(条件任务 / 暂停态 / 空中下发通道)
+ALTER TABLE wayline_job ADD COLUMN IF NOT EXISTS job_channel           VARCHAR(16) NOT NULL DEFAULT 'FLIGHTTASK';
+ALTER TABLE wayline_job ADD COLUMN IF NOT EXISTS ready_conditions_json TEXT;
+ALTER TABLE wayline_job ADD COLUMN IF NOT EXISTS rth_altitude          INTEGER;
+ALTER TABLE wayline_job ADD COLUMN IF NOT EXISTS return_home_json      TEXT;
+ALTER TABLE wayline_job DROP CONSTRAINT IF EXISTS ck_wayline_job_type;
+ALTER TABLE wayline_job ADD CONSTRAINT ck_wayline_job_type
+    CHECK (job_type IN ('IMMEDIATE', 'TIMED', 'CONDITION'));
+ALTER TABLE wayline_job DROP CONSTRAINT IF EXISTS ck_wayline_job_status;
+ALTER TABLE wayline_job ADD CONSTRAINT ck_wayline_job_status
+    CHECK (status IN ('SENT', 'READY', 'QUEUED', 'RUNNING', 'PAUSED', 'SUCCESS', 'FAILED', 'CANCELED'));
+
+-- ---------------- 直播能力(state 主题 live_capacity 上报的可用视频源清单) ----------------
+CREATE TABLE IF NOT EXISTS device_live_capacity (
+    id            BIGSERIAL    PRIMARY KEY,
+    device_sn     VARCHAR(64)  NOT NULL,
+    capacity_json TEXT         NOT NULL DEFAULT '{}',
+    create_time   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time   TIMESTAMP,
+    CONSTRAINT uk_live_capacity_sn UNIQUE (device_sn)
+);
+COMMENT ON TABLE device_live_capacity IS '机场直播能力:可用视频源 / 相机 / 镜头清单,直播 TAB 据此拼 video_id';
+
+-- ---------------- 直播会话(live_start_push / live_stop_push) ----------------
+CREATE TABLE IF NOT EXISTS device_live_stream (
+    id            BIGSERIAL    PRIMARY KEY,
+    device_sn     VARCHAR(64)  NOT NULL,
+    video_id      VARCHAR(128) NOT NULL,
+    camera_index  VARCHAR(16),
+    video_index   VARCHAR(16),
+    video_type    VARCHAR(16)  NOT NULL DEFAULT 'normal',
+    url_type      VARCHAR(16)  NOT NULL DEFAULT 'RTMP',
+    url           VARCHAR(500),
+    video_quality INTEGER      NOT NULL DEFAULT 0,
+    status        VARCHAR(16)  NOT NULL DEFAULT 'PUSHING',
+    error_msg     VARCHAR(255),
+    started_at    TIMESTAMP,
+    stopped_at    TIMESTAMP,
+    create_time   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time   TIMESTAMP,
+    CONSTRAINT ck_live_status     CHECK (status IN ('PUSHING', 'STOPPED', 'FAILED')),
+    CONSTRAINT ck_live_url_type   CHECK (url_type IN ('RTMP', 'GB28181', 'WEBRTC', 'AGORA')),
+    CONSTRAINT ck_live_video_type CHECK (video_type IN ('normal', 'wide', 'zoom', 'ir'))
+);
+COMMENT ON TABLE  device_live_stream   IS '直播会话:live_start_push 开流,live_stop_push 停流';
+COMMENT ON COLUMN device_live_stream.video_id     IS '视频源标识:{sn}/{camera_index}/{video_index}';
+COMMENT ON COLUMN device_live_stream.video_type   IS '镜头:normal 广角 / wide 超广角 / zoom 变焦 / ir 红外';
+COMMENT ON COLUMN device_live_stream.video_quality IS '0 自适应 / 1 流畅 / 2 标清 / 3 高清 / 4 超清';
+CREATE INDEX IF NOT EXISTS idx_live_stream_sn ON device_live_stream (device_sn, create_time DESC);
+
+-- ---------------- 媒体文件(任务执行后设备 file_upload_callback 逐个上报) ----------------
+CREATE TABLE IF NOT EXISTS device_media_file (
+    id                BIGSERIAL     PRIMARY KEY,
+    device_sn         VARCHAR(64)   NOT NULL,
+    flight_id         VARCHAR(64),
+    object_key        VARCHAR(500),
+    path              VARCHAR(500),
+    name              VARCHAR(255)  NOT NULL,
+    sub_file_type     INTEGER,
+    is_original       BOOLEAN       NOT NULL DEFAULT TRUE,
+    drone_model_key   VARCHAR(64),
+    payload_model_key VARCHAR(64),
+    longitude         NUMERIC(10, 6),
+    latitude          NUMERIC(10, 6),
+    absolute_altitude NUMERIC(10, 2),
+    relative_altitude NUMERIC(10, 2),
+    gimbal_yaw_degree NUMERIC(8, 2),
+    taken_at          TIMESTAMP,
+    create_time       TIMESTAMP     NOT NULL DEFAULT NOW(),
+    update_time       TIMESTAMP
+);
+COMMENT ON TABLE  device_media_file            IS '媒体文件:航线任务产生的照片/视频,file_upload_callback 事件流入';
+COMMENT ON COLUMN device_media_file.is_original IS 'true 原始媒体 / false 缩略图或预览';
+CREATE INDEX IF NOT EXISTS idx_media_sn     ON device_media_file (device_sn, create_time DESC);
+CREATE INDEX IF NOT EXISTS idx_media_flight ON device_media_file (flight_id);
+
+-- ---------------- 媒体上传优先任务(设备上报 + 云端可改) ----------------
+CREATE TABLE IF NOT EXISTS device_media_priority (
+    id          BIGSERIAL   PRIMARY KEY,
+    device_sn   VARCHAR(64) NOT NULL,
+    flight_id   VARCHAR(64) NOT NULL,
+    create_time TIMESTAMP   NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP,
+    CONSTRAINT uk_media_priority_sn UNIQUE (device_sn)
+);
+COMMENT ON TABLE device_media_priority IS '当前优先上传媒体的任务:highest_priority 事件上报,云端可经 upload_flighttask_media_prioritize 改写';
+
+-- ---------------- HMS 健康告警(结构化落库,事件流里另有原始报文) ----------------
+CREATE TABLE IF NOT EXISTS device_hms (
+    id           BIGSERIAL    PRIMARY KEY,
+    device_sn    VARCHAR(64)  NOT NULL,
+    code         VARCHAR(64)  NOT NULL,
+    level        VARCHAR(16)  NOT NULL DEFAULT 'NOTICE',
+    module_index INTEGER,
+    message      VARCHAR(255),
+    event_time   TIMESTAMP,
+    create_time  TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time  TIMESTAMP,
+    CONSTRAINT ck_hms_level CHECK (level IN ('NOTICE', 'WARN', 'ERROR'))
+);
+COMMENT ON TABLE device_hms        IS '机场健康告警:hms 事件中的 hms_list 逐条落库';
+COMMENT ON COLUMN device_hms.level IS 'NOTICE 提示 / WARN 警告 / ERROR 严重';
+CREATE INDEX IF NOT EXISTS idx_hms_sn ON device_hms (device_sn, create_time DESC);

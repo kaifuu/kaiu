@@ -4,11 +4,13 @@ import com.emergency.inspection.common.ApiResponse;
 import com.emergency.inspection.common.OpLog;
 import com.emergency.inspection.common.PageUtil;
 import com.emergency.inspection.dto.query.AiTargetQuery;
+import com.emergency.inspection.dto.query.HmsQuery;
 import com.emergency.inspection.entity.DeviceAiConfig;
 import com.emergency.inspection.entity.DeviceLogFile;
 import com.emergency.inspection.service.AiRecognitionService;
 import com.emergency.inspection.service.DeviceLogService;
 import com.emergency.inspection.service.DeviceService;
+import com.emergency.inspection.service.HmsService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
-/** 设备扩展能力:远程日志 + AI 目标识别(挂在设备路由下,与台账控制器互补) */
+/** 设备扩展能力:远程日志 + AI 目标识别 + HMS 健康告警(挂在设备路由下,与台账控制器互补) */
 @RestController
 @RequestMapping("/api/devices")
 @RequiredArgsConstructor
@@ -24,6 +26,7 @@ public class DeviceSupportController {
 
     private final DeviceLogService logService;
     private final AiRecognitionService aiService;
+    private final HmsService hmsService;
     private final DeviceService deviceService;
 
     /* ==================== 远程日志 ==================== */
@@ -65,6 +68,14 @@ public class DeviceSupportController {
     public ApiResponse<Map<String, Object>> aiTargets(@PathVariable Long id, AiTargetQuery query) {
         query.setDeviceSn(deviceService.require(id).getDeviceSn());
         return ApiResponse.ok(PageUtil.result(aiService.targetPage(query)));
+    }
+
+    /* ==================== HMS 健康告警 ==================== */
+
+    @GetMapping("/{id}/hms/page")
+    public ApiResponse<Map<String, Object>> hms(@PathVariable Long id, HmsQuery query) {
+        query.setDeviceSn(deviceService.require(id).getDeviceSn());
+        return ApiResponse.ok(PageUtil.result(hmsService.page(query)));
     }
 
     /* ==================== 入参 ==================== */

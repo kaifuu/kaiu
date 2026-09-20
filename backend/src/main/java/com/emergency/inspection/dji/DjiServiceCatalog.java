@@ -87,6 +87,24 @@ public final class DjiServiceCatalog {
             ServiceDef.hidden("flighttask_execute", "执行航线任务", "航线任务", false),
             ServiceDef.hidden("flighttask_undo", "取消航线任务", "航线任务", false),
 
+            // ---- Dock 3 航线扩展:暂停恢复 / 空中下发航线,由航线任务 TAB 编排 ----
+            ServiceDef.hidden("flighttask_pause", "暂停航线任务", "航线任务", false),
+            ServiceDef.hidden("flighttask_recovery", "恢复航线任务", "航线任务", false),
+            ServiceDef.hidden("in_flight_wayline_deliver", "空中下发航线", "航线任务", false),
+            ServiceDef.hidden("in_flight_wayline_stop", "空中航线悬停", "航线任务", false),
+            ServiceDef.hidden("in_flight_wayline_recover", "空中航线恢复", "航线任务", false),
+            ServiceDef.hidden("in_flight_wayline_cancel", "空中航线取消", "航线任务", false),
+
+            // ---- 直播:直播 TAB 编排开停流与清晰度 / 镜头 / 相机位切换 ----
+            ServiceDef.hidden("live_start_push", "开启直播", "直播", false),
+            ServiceDef.hidden("live_stop_push", "停止直播", "直播", false),
+            ServiceDef.hidden("live_set_quality", "设置直播清晰度", "直播", false),
+            ServiceDef.hidden("live_lens_change", "切换直播镜头", "直播", false),
+            ServiceDef.hidden("live_camera_change", "切换直播相机位", "直播", false),
+
+            // ---- 媒体:媒体 TAB 编排优先上传 ----
+            ServiceDef.hidden("upload_flighttask_media_prioritize", "媒体优先上传", "媒体管理", false),
+
             // ---- 远程调试:一键起飞需指定目标点,经调试试验台带参下发 ----
             ServiceDef.param("takeoff_to_point", "一键起飞(指点)", "远程调试", true, List.of(
                     new ParamDef("longitude", "目标经度", "number", true, null, "如 116.397428"),

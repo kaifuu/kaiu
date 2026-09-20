@@ -210,6 +210,8 @@ onMounted(async () => {
     Object.assign(stats, await http.get('/dashboard/stats'))
   } finally { loading.value = false }
   await nextTick()
+  // 加载期间组件可能已被卸载(快速切走路由),refs 为空时直接放弃初始化
+  if (!riskRef.value || !taskRef.value || !trendRef.value) return
   riskChart = echarts.init(riskRef.value)
   taskChart = echarts.init(taskRef.value)
   trendChart = echarts.init(trendRef.value)

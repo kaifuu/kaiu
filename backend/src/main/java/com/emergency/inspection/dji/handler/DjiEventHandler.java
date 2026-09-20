@@ -9,6 +9,8 @@ import com.emergency.inspection.service.AiRecognitionService;
 import com.emergency.inspection.service.DeviceLogService;
 import com.emergency.inspection.service.DeviceService;
 import com.emergency.inspection.service.FirmwareService;
+import com.emergency.inspection.service.HmsService;
+import com.emergency.inspection.service.MediaService;
 import com.emergency.inspection.service.WaylineJobService;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.netty.handler.codec.mqtt.MqttQoS;
@@ -20,9 +22,10 @@ import java.util.Map;
 
 /**
  * 设备事件与请求:
- * - events   HMS 健康告警、航线任务进度、OTA 进度、日志上传进度、AI 目标识别等,
+ * - events   HMS 健康告警、航线任务进度、OTA 进度、日志/媒体上传、AI 目标识别等,
  *            落 device_event 后路由到对应业务服务,并回 events_reply
- * - requests 设备向云端要资源(如航线文件),本期统一回「不支持」避免设备一直重试
+ * - requests 设备向云端要资源:storage_config_get(媒体存储)、flighttask_resource_get(航线文件)、
+ *            flighttask_progress_get(蛙跳任务概况),分别回真实载荷;其余回「不支持」避免设备重试
  */
 @Slf4j
 @Component
@@ -34,6 +37,8 @@ public class DjiEventHandler implements MqttMessageListener {
     private final FirmwareService firmwareService;
     private final DeviceLogService deviceLogService;
     private final AiRecognitionService aiRecognitionService;
+    private final MediaService mediaService;
+    private final HmsService hmsService;
     private final MqttPublisher publisher;
 
     @Override
@@ -59,19 +64,18 @@ public class DjiEventHandler implements MqttMessageListener {
                     DjiMessage.buildReply(message.tid(), message.bid(), method, Map.of("result", 0)),
                     MqttQoS.AT_MOST_ONCE);
         } else {
-            log.info("设备请求(本期未支持): sn={} method={}", sn, method);
-            publisher.publish(DjiTopics.requestsReply(sn),
-                    DjiMessage.buildReply(message.tid(), message.bid(), method,
-                            Map.of("result", 1, "message", "平台未支持该请求")),
-                    MqttQoS.AT_MOST_ONCE);
+            handleRequest(sn, method, message);
         }
     }
+
+    /* ==================== 事件 ==================== */
 
     private void handleEvent(String sn, String method, DjiMessage message) {
         DeviceEvent.EventType type = switch (method) {
             case "hms" -> DeviceEvent.EventType.HMS;
-            case "flighttask_progress" -> DeviceEvent.EventType.FLIGHTTASK;
-            case "file_upload_callback" -> DeviceEvent.EventType.FILE_UPLOAD;
+            case "flighttask_progress", "flighttask_ready", "return_home_info",
+                 "in_flight_wayline_progress" -> DeviceEvent.EventType.FLIGHTTASK;
+            case "file_upload_callback", "highest_priority_upload_flighttask_media" -> DeviceEvent.EventType.FILE_UPLOAD;
             case "ota_progress" -> DeviceEvent.EventType.OTA;
             case "logs_file_upload_progress" -> DeviceEvent.EventType.FILE_UPLOAD;
             case "ai_target" -> DeviceEvent.EventType.AI;
@@ -79,6 +83,7 @@ public class DjiEventHandler implements MqttMessageListener {
         };
         DeviceEvent.Level level = switch (method) {
             case "hms" -> DeviceEvent.Level.WARN;
+            case "device_exit_homing_notify" -> DeviceEvent.Level.WARN;
             default -> DeviceEvent.Level.INFO;
         };
         deviceService.recordEvent(sn, type, method, level, summarize(method, message.data()), message.data());
@@ -93,16 +98,40 @@ public class DjiEventHandler implements MqttMessageListener {
         }
         try {
             switch (method) {
-                case "flighttask_progress" -> waylineJobService.onProgress(sn, data);
+                case "flighttask_progress", "in_flight_wayline_progress" -> waylineJobService.onProgress(sn, data);
+                case "flighttask_ready" -> waylineJobService.onFlighttaskReady(sn, data);
+                case "return_home_info" -> waylineJobService.onReturnHomeInfo(sn, data);
                 case "ota_progress" -> firmwareService.onProgress(sn, data);
                 case "logs_file_upload_progress" -> deviceLogService.onUploadProgress(sn, data);
                 case "ai_target" -> aiRecognitionService.onTarget(sn, data);
+                case "file_upload_callback" -> mediaService.onFileUploadCallback(sn, data);
+                case "highest_priority_upload_flighttask_media" -> mediaService.onHighestPriority(sn, data);
+                case "hms" -> hmsService.onHms(sn, data);
                 default -> { /* 其余事件仅落库展示 */ }
             }
         } catch (Exception e) {
             // 事件路由异常不影响事件落库与回执
             log.error("事件路由失败: sn={} method={} {}", sn, method, e.getMessage());
         }
+    }
+
+    /* ==================== 请求 ==================== */
+
+    /** 设备向云端要资源:已知请求回真实载荷,未知请求回「不支持」并带原因 */
+    private void handleRequest(String sn, String method, DjiMessage message) {
+        Object replyData = null;
+        switch (method) {
+            case "storage_config_get" -> replyData = mediaService.storageConfig(sn);
+            case "flighttask_resource_get" -> replyData = waylineJobService.onResourceGet(sn, message.data());
+            case "flighttask_progress_get" -> replyData = waylineJobService.onProgressGet(sn);
+            default -> log.info("设备请求(未支持): sn={} method={}", sn, method);
+        }
+        if (replyData == null) {
+            replyData = Map.of("result", 1, "message", "平台未支持该请求或资源不存在");
+        }
+        publisher.publish(DjiTopics.requestsReply(sn),
+                DjiMessage.buildReply(message.tid(), message.bid(), method, replyData),
+                MqttQoS.AT_MOST_ONCE);
     }
 
     /** 把事件数据压成一句可读摘要,便于列表页直接展示 */
@@ -117,6 +146,14 @@ public class DjiEventHandler implements MqttMessageListener {
                 yield "航线任务进度: " + (status == null ? "执行中" : status)
                         + (percent == null ? "" : "(" + percent + "%)");
             }
+            case "in_flight_wayline_progress" -> {
+                Integer percent = data.hasNonNull("progress") ? data.get("progress").asInt() : null;
+                yield "空中航线进度" + (percent == null ? "" : "(" + percent + "%)");
+            }
+            case "flighttask_ready" -> "条件任务就绪,云端已触发执行";
+            case "return_home_info" -> "返航轨迹上报: "
+                    + (data.has("planning_path") && data.get("planning_path").isArray()
+                    ? data.get("planning_path").size() + " 个规划点" : "无明细");
             case "ota_progress" -> {
                 String status = text(data, "status");
                 Integer percent = data.hasNonNull("progress") ? data.get("progress").asInt() : null;
@@ -136,13 +173,20 @@ public class DjiEventHandler implements MqttMessageListener {
                         + (confidence == null ? "" : "(置信度 " + confidence + "%)");
             }
             case "hms" -> "健康告警:" + hmsSummary(data);
-            case "file_upload_callback" -> "媒体文件上传回调";
+            case "file_upload_callback" -> {
+                JsonNode file = data.get("file");
+                String name = file != null && file.hasNonNull("name") ? file.get("name").asText() : "";
+                yield "媒体文件上传完成: " + name;
+            }
+            case "highest_priority_upload_flighttask_media" ->
+                    "设备上报优先上传任务: " + (text(data, "flight_id") == null ? "-" : text(data, "flight_id"));
+            case "device_exit_homing_notify" -> "设备已退出返航";
             default -> method;
         };
     }
 
     private String hmsSummary(JsonNode data) {
-        JsonNode list = data.has("list") ? data.get("list") : data.get("hms");
+        JsonNode list = data.has("hms_list") ? data.get("hms_list") : data.get("list");
         if (list == null || !list.isArray() || list.isEmpty()) {
             return "无明细";
         }

@@ -216,14 +216,16 @@ if (await dockRow.count()) {
     : bad('TAB 设备事件', `无分页器(行=${evtRows})`)
   await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-events.png` })
 
-  // TAB 航线任务:左航线库 + 右任务表
+  // TAB 航线任务:左航线库 + 右任务表(Dock 3 扩展:返航 / 空中下发)
   await page.locator('.el-tabs__item', { hasText: '航线任务' }).click()
   await page.waitForTimeout(1500)
   let wlRows = await page.locator('.el-tab-pane:visible .el-table__body tr').count()
   let wlJobBtn = await page.locator('.el-tab-pane:visible button:has-text("下发任务")').count()
-  wlRows > 0 && wlJobBtn === 1
-    ? ok(`TAB 航线任务:航线/任务表 ${wlRows} 行,含下发入口`)
-    : bad('TAB 航线任务', `行=${wlRows} 下发钮=${wlJobBtn}`)
+  let wlRth = await page.locator('.el-tab-pane:visible button:has-text("一键返航")').count()
+  let wlInFlight = await page.locator('.el-tab-pane:visible button:has-text("空中下发")').count()
+  wlRows > 0 && wlJobBtn === 1 && wlRth === 1 && wlInFlight === 1
+    ? ok(`TAB 航线任务:航线/任务表 ${wlRows} 行,含下发/返航/空中下发`)
+    : bad('TAB 航线任务', `行=${wlRows} 下发钮=${wlJobBtn} 返航钮=${wlRth} 空中下发=${wlInFlight}`)
   await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-wayline.png` })
 
   // TAB 远程调试:指令目录 + 选中后出现参数执行区
@@ -267,6 +269,37 @@ if (await dockRow.count()) {
     ? ok(`TAB AI识别:${aiSwitch} 个开关 + 保存下发`)
     : bad('TAB AI识别', `开关=${aiSwitch} 保存钮=${aiSave}`)
   await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-ai.png` })
+
+  // TAB 直播管理:能力/开流表单 + 会话表(Dock 3 live)
+  await page.locator('.el-tabs__item', { hasText: '直播管理' }).click()
+  await page.waitForTimeout(1500)
+  let liveStart = await page.locator('.el-tab-pane:visible button:has-text("开始直播")').count()
+  let liveRows = await page.locator('.el-tab-pane:visible .el-table__body tr').count()
+  liveStart === 1 && liveRows > 0
+    ? ok(`TAB 直播管理:开流入口 + 会话 ${liveRows} 行`)
+    : bad('TAB 直播管理', `开始钮=${liveStart} 会话行=${liveRows}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-live.png` })
+
+  // TAB 媒体管理:优先上传卡 + 媒体文件表(Dock 3 media)
+  await page.locator('.el-tabs__item', { hasText: '媒体管理' }).click()
+  await page.waitForTimeout(1500)
+  let mediaPrio = await page.locator('.el-tab-pane:visible button:has-text("设为优先")').count()
+  let mediaRows = await page.locator('.el-tab-pane:visible .el-table__body tr').count()
+  let mediaEmpty = await page.locator('.el-tab-pane:visible .el-table__empty-text').count()
+  mediaPrio === 1 && (mediaRows > 0 || mediaEmpty > 0)
+    ? ok(`TAB 媒体管理:优先上传入口,文件 ${mediaRows} 行`)
+    : bad('TAB 媒体管理', `优先钮=${mediaPrio} 行=${mediaRows} 空态=${mediaEmpty}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-media.png` })
+
+  // TAB 健康告警:HMS 分级列表
+  await page.locator('.el-tabs__item', { hasText: '健康告警' }).click()
+  await page.waitForTimeout(1500)
+  let hmsRows = await page.locator('.el-tab-pane:visible .el-table__body tr').count()
+  let hmsEmpty = await page.locator('.el-tab-pane:visible .el-table__empty-text').count()
+  hmsRows > 0 || hmsEmpty > 0
+    ? ok(`TAB 健康告警:${hmsRows} 条告警${hmsEmpty ? '(空态)' : ''}`)
+    : bad('TAB 健康告警', '既无数据行也无空状态')
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-dock-hms.png` })
 } else {
   bad('机场控制页', '列表中没有机场(模拟器未运行?)')
 }

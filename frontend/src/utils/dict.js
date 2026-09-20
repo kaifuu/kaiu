@@ -185,7 +185,8 @@ export const WAYLINE_TEMPLATE = {
 
 export const WAYLINE_JOB_TYPE = {
   IMMEDIATE: { label: '立即任务', tagType: 'primary' },
-  TIMED: { label: '定时任务', tagType: 'warning' }
+  TIMED: { label: '定时任务', tagType: 'warning' },
+  CONDITION: { label: '条件', tagType: 'warning' }
 }
 
 export const WAYLINE_JOB_STATUS = {
@@ -193,6 +194,7 @@ export const WAYLINE_JOB_STATUS = {
   READY: { label: '机场就绪', tagType: 'warning' },
   QUEUED: { label: '已入队', tagType: 'primary' },
   RUNNING: { label: '执行中', tagType: 'success' },
+  PAUSED: { label: '已暂停', tagType: 'warning' },
   SUCCESS: { label: '已完成', tagType: 'success' },
   FAILED: { label: '失败', tagType: 'danger' },
   CANCELED: { label: '已取消', tagType: 'info' }
@@ -223,6 +225,42 @@ export const AI_CONFIDENCE_MODE = {
   COUNT: { label: '计数模式', tagType: 'primary' },
   RESCUE: { label: '搜救模式', tagType: 'warning' },
   CUSTOM: { label: '自定义', tagType: 'success' }
+}
+
+/* ---------------- 机场直播 / 媒体 / 健康告警(Dock 3 服务集) ---------------- */
+export const LIVE_URL_TYPE = {
+  RTMP: { label: 'RTMP', tagType: 'primary' },
+  GB28181: { label: '国标28181', tagType: 'warning' },
+  WEBRTC: { label: 'WebRTC', tagType: 'success' },
+  AGORA: { label: '声网', tagType: 'info' }
+}
+
+/** 直播清晰度:数字键与 DOCK_MODE / COVER_STATE 同法,dictLabel / dictTag 直接命中 */
+export const LIVE_QUALITY = {
+  0: { label: '自适应', tagType: 'info' },
+  1: { label: '流畅', tagType: 'info' },
+  2: { label: '标清', tagType: 'primary' },
+  3: { label: '高清', tagType: 'primary' },
+  4: { label: '超清', tagType: 'danger' }
+}
+
+export const LIVE_VIDEO_TYPE = {
+  normal: { label: '广角', tagType: 'primary' },
+  wide: { label: '超广角', tagType: 'info' },
+  zoom: { label: '变焦', tagType: 'warning' },
+  ir: { label: '红外', tagType: 'danger' }
+}
+
+export const LIVE_STREAM_STATUS = {
+  PUSHING: { label: '推流中', tagType: 'success' },
+  STOPPED: { label: '已停止', tagType: 'info' },
+  FAILED: { label: '失败', tagType: 'danger' }
+}
+
+export const HMS_LEVEL = {
+  NOTICE: { label: '提示', tagType: 'info' },
+  WARN: { label: '警告', tagType: 'warning' },
+  ERROR: { label: '严重', tagType: 'danger' }
 }
 
 /* ---------------- 巡检服务(问题 / 工单 / 需求 / 飞手 / 视频) ---------------- */

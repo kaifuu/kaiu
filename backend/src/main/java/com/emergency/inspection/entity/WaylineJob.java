@@ -18,8 +18,25 @@ import java.time.LocalDateTime;
 public class WaylineJob extends BaseEntity {
 
     public enum JobType implements IEnum<String> {
-        IMMEDIATE,  // 立即任务
-        TIMED;      // 定时任务
+        IMMEDIATE,  // 立即任务(task_type=0)
+        TIMED,      // 定时任务(task_type=1)
+        CONDITION;  // 条件任务(task_type=2):ready_conditions 满足后设备发 flighttask_ready
+
+        @Override
+        public String getValue() {
+            return name();
+        }
+
+        /** 上云 API 协议里的 task_type 数值 */
+        public int protocolValue() {
+            return ordinal();
+        }
+    }
+
+    /** 任务下发通道:常规三段式 / Dock 3 空中下发航线 */
+    public enum JobChannel implements IEnum<String> {
+        FLIGHTTASK,     // 地面任务:prepare → execute → progress
+        IN_FLIGHT;      // 空中下发:in_flight_wayline_deliver → progress
 
         @Override
         public String getValue() {
@@ -29,9 +46,10 @@ public class WaylineJob extends BaseEntity {
 
     public enum Status implements IEnum<String> {
         SENT,       // 已下发 prepare,等机场确认
-        READY,      // 机场就绪;定时任务等待到点
+        READY,      // 机场就绪:定时任务等待到点 / 条件任务等待设备就绪
         QUEUED,     // 已下发 execute,任务入队
         RUNNING,    // 执行中
+        PAUSED,     // 已暂停(flighttask_pause,可 recovery 恢复)
         SUCCESS,    // 完成
         FAILED,     // 失败
         CANCELED;   // 已取消
@@ -59,6 +77,9 @@ public class WaylineJob extends BaseEntity {
 
     private JobType jobType;
 
+    /** 下发通道:FLIGHTTASK 常规三段式 / IN_FLIGHT 空中下发航线 */
+    private JobChannel jobChannel;
+
     /** 定时任务的计划执行时刻 */
     private LocalDateTime executeTime;
 
@@ -70,6 +91,15 @@ public class WaylineJob extends BaseEntity {
 
     /** 断点信息 JSON:{index,progress,remain_margin},失败/取消后可续飞 */
     private String breakpointJson;
+
+    /** 条件任务就绪条件 JSON:{battery_capacity,begin_time,end_time}(毫秒时间戳) */
+    private String readyConditionsJson;
+
+    /** 返航高度 m */
+    private Integer rthAltitude;
+
+    /** return_home_info 事件上报的返航轨迹点 JSON */
+    private String returnHomeJson;
 
     private Integer mediaCount;
 

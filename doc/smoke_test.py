@@ -412,6 +412,19 @@ acfg = ok("离线机场 AI 配置保存", "PUT", "/devices/%s/ai/config" % ndock
            "filterTypes": ["PERSON", "BOAT"]})
 check("离线保存 synced=false", acfg and acfg.get("synced") is False, acfg)
 ok("AI 识别记录分页", "GET", "/devices/%s/ai/targets/page?page=1&size=5" % ndock["id"])
+
+print("\n[11b] 机场扩展能力(直播 / 媒体 / HMS,离线负面路径)")
+bad("离线机场直播开流被拒", "POST", "/devices/%s/live/start" % ndock["id"],
+    {"videoId": "X/165-0/normal-0", "urlType": "RTMP", "url": "rtmp://x/live"})
+bad("直播缺推流地址被拒(校验先行)", "POST", "/devices/%s/live/start" % ndock["id"],
+    {"videoId": "X/165-0/normal-0", "urlType": "RTMP"})
+bad("直播非法镜头被拒", "POST", "/devices/%s/live/start" % ndock["id"],
+    {"videoId": "X/165-0/normal-0", "urlType": "WEBRTC", "videoType": "fisheye"})
+bad("离线机场媒体优先上传被拒", "POST", "/devices/%s/media/prioritize" % ndock["id"],
+    {"flightId": "no-such-flight"})
+bad("媒体优先上传缺任务号被拒", "POST", "/devices/%s/media/prioritize" % ndock["id"], {})
+hm = ok("HMS 告警分页(离线机场空集)", "GET", "/devices/%s/hms/page?page=1&size=5" % ndock["id"])
+check("HMS 分页返回 {rows,total}", "rows" in hm and "total" in hm, hm)
 ok("删除离线机场", "DELETE", "/devices/%s" % ndock["id"])
 
 print("\n[12] 错误归一")

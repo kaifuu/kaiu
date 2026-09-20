@@ -439,18 +439,28 @@ videoByStatus, orderByDept, recentIssues, recentOrders, onlineVideos, mapPoints,
 `templateTypes`:`WAYPOINT` 航点 / `POI` 兴趣点 / `INSPECT` 巡查拍照 / `STRIP` 航带 / `SOLID` 立体。
 航点结构:`{longitude, latitude, height, speed}`;至少 1 个且经纬度必填。
 
-### 航线任务 `/api/wayline-jobs`(flighttask 三段式)
+### 航线任务 `/api/wayline-jobs`(flighttask 三段式 + Dock 3 扩展)
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/page` | 筛选:`dockSn`、`status`;排序 `sortBy/direction` |
-| GET | `/{id}` | |
-| POST | `` | `{waylineId, dockId, jobType, executeTime}`;`executeTime` 兼容空格或 `T` 分隔 |
+| GET | `/{id}` | 含 `returnHomeJson` 返航轨迹、`readyConditionsJson` 就绪条件 |
+| POST | `` | `{waylineId, dockId, jobType, executeTime, rthAltitude, readyConditionsJson}` |
 | POST | `/{id}/undo` | 取消(活跃态) |
-| POST | `/{id}/resume` | 断点续飞(FAILED / CANCELED 且有断点) |
+| POST | `/{id}/resume` | 断点续飞(FAILED / CANCELED 且有断点;空中任务不支持) |
+| POST | `/{id}/pause` / `/{id}/recovery` | 暂停 / 恢复(`flighttask_pause` / `flighttask_recovery`) |
+| POST | `/{id}/return-home` | 一键返航(对所属机场下发 `return_home`) |
+| POST | `/in-flight` | 空中下发航线(`in_flight_wayline_deliver`),要求飞行器在空中 |
+| POST | `/{id}/in-flight/{action}` | `stop` 悬停 / `recover` 恢复 / `cancel` 取消并返航 |
 
 编排:`flighttask_prepare` →(立即任务自动 / 定时任务到点)`flighttask_execute` → 设备
-`flighttask_progress` 事件驱动 `SENT→READY→QUEUED→RUNNING→SUCCESS/FAILED/CANCELED`。
+`flighttask_progress` 事件驱动 `SENT→READY→QUEUED→RUNNING→PAUSED→SUCCESS/FAILED/CANCELED`。
+`jobType`:`IMMEDIATE` 立即 / `TIMED` 定时 / `CONDITION` 条件(至少一个就绪条件:
+`readyConditionsJson = {"battery_capacity":80,"begin_time":ms,"end_time":ms}`)。
+条件任务由设备监听条件,满足后发 `flighttask_ready` 事件,云端随即 execute;
+设备执行前经 `flighttask_resource_get` 请求向云端取航线文件句柄。
+`jobChannel`:`FLIGHTTASK` 常规三段式 / `IN_FLIGHT` 空中下发(进度走 `in_flight_wayline_progress`)。
+返航时设备上报 `return_home_info`(planning_path),存 `returnHomeJson` 供前端展开。
 同一机场同时只允许一个活跃任务;下发失败任务行留痕(FAILED + errorMsg)。
 
 ### 固件升级 `/api/firmwares` + `/api/firmware-tasks`
@@ -485,3 +495,43 @@ videoByStatus, orderByDept, recentIssues, recentOrders, onlineVideos, mapPoints,
 `confidenceMode`:`COUNT` 计数(65%) / `RESCUE` 搜救(50%) / `CUSTOM` 自定义(50-99);
 `filterTypes` 出入参为数组(`PERSON/CAR/BOAT`),库内存 JSON。
 设备侧 `ai_target` 事件落识别记录;删除设备级联清理 AI 配置、识别记录与日志文件。
+
+### 直播管理 `/api/devices/{id}/live`(Dock 3 live)
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/capacity` | 设备经 state 上报的 `live_capacity`(可用视频源 / 相机 / 镜头) |
+| GET | `/streams/page` | 直播会话分页,筛选 `status` |
+| POST | `/start` | `{videoId, urlType, url, videoQuality, videoType}` 下发 `live_start_push` |
+| POST | `/streams/{sid}/stop` | `live_stop_push` |
+| POST | `/streams/{sid}/quality` | `{videoQuality}` 下发 `live_set_quality` |
+| POST | `/lens` | `{videoType}` 下发 `live_lens_change`(作用于该机场当前推流) |
+| POST | `/streams/{sid}/camera` | `{cameraPosition}` 0 舱内 / 1 舱外(`live_camera_change`) |
+
+`videoId` 形如 `{sn}/{camera_index}/{video_index}`,由 `capacity` 清单拼出;
+`urlType`:`RTMP`(协议值 1)/ `GB28181`(3)/ `WEBRTC`(4,免 url)/ `AGORA`(0);
+`videoQuality`:`0` 自适应 / `1` 流畅 / `2` 标清 / `3` 高清 / `4` 超清;
+`videoType`:`normal` 广角 / `wide` 超广角 / `zoom` 变焦 / `ir` 红外。
+会话状态:`PUSHING/STOPPED/FAILED`(离线机场开流任务直接 FAILED 留痕)。
+
+### 媒体管理 `/api/devices/{id}/media`(Dock 3 media)
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/page` | 媒体文件分页,筛选 `flightId`、`isOriginal`;回填 `flightName` |
+| GET | `/priority` | 当前优先上传媒体的任务(设备上报或云端指定) |
+| POST | `/prioritize` | `{flightId}` 下发 `upload_flighttask_media_prioritize` |
+
+链路:任务完成 → 设备发 `storage_config_get` 请求,云端回对象存储句柄
+(bucket / credentials / object_key_prefix)→ 设备上传后逐个 `file_upload_callback`
+事件落库(坐标 / 高度 / 云台角 / 拍摄时刻)→ 任务 `mediaCount` 以实际原始文件数回填;
+设备同时上报 `highest_priority_upload_flighttask_media` 维护优先级台账。
+
+### HMS 健康告警 `/api/devices/{id}/hms`
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/page` | 分页,筛选 `level` |
+
+`level`:`NOTICE` 提示 / `WARN` 警告 / `ERROR` 严重(设备数字等级 0/1/2 归一);
+来源为设备 `hms` 事件中的 `hms_list` 逐条落库,事件流里同时留有原始报文。

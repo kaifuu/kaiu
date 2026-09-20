@@ -410,6 +410,21 @@
           <AiTab :dock="dock" />
         </el-tab-pane>
 
+        <!-- ============ TAB 直播管理 ============ -->
+        <el-tab-pane label="直播管理" name="live" lazy>
+          <LiveTab :dock="dock" />
+        </el-tab-pane>
+
+        <!-- ============ TAB 媒体管理 ============ -->
+        <el-tab-pane label="媒体管理" name="media" lazy>
+          <MediaTab :dock="dock" />
+        </el-tab-pane>
+
+        <!-- ============ TAB 健康告警 ============ -->
+        <el-tab-pane label="健康告警" name="hms" lazy>
+          <HmsTab :dock="dock" />
+        </el-tab-pane>
+
         <!-- ============ TAB 3 指令记录 ============ -->
         <el-tab-pane label="指令记录" name="history">
           <div class="tab-pad">
@@ -531,6 +546,9 @@ import DebugTab from './dock/DebugTab.vue'
 import FirmwareTab from './dock/FirmwareTab.vue'
 import LogTab from './dock/LogTab.vue'
 import AiTab from './dock/AiTab.vue'
+import LiveTab from './dock/LiveTab.vue'
+import MediaTab from './dock/MediaTab.vue'
+import HmsTab from './dock/HmsTab.vue'
 
 const route = useRoute()
 const id = route.params.id

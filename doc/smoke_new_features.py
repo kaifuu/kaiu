@@ -38,6 +38,12 @@ def data_of(r):
     return r.get("data") if isinstance(r, dict) else None
 
 
+def api(method, path, body=None):
+    """call() 返回 (http_status, body) 元组,新段落用这个直接拿 body"""
+    _, r = call(method, path, body)
+    return r
+
+
 print("=" * 70)
 print("新功能接口冒烟(需后端 + 模拟器运行中)")
 
@@ -54,11 +60,23 @@ _, r = call("GET", "/devices")
 devices = r["data"]
 sim_dock = next((d for d in devices if d["deviceSn"] == "DOCK-SIM-0001"), None)
 ok("定位模拟机场", sim_dock is not None)
-# 库里未必有第二台机场,自建一台离线机场走负面路径
+# 库里未必有第二台机场,自建一台离线机场走负面路径(上次运行若中途崩溃会残留同名设备,先清掉)
 _, r = call("POST", "/devices", {"name": "冒烟离线机场", "deviceSn": "DOCK-SMOKE-NE1",
                                  "deviceType": "DOCK", "deviceModel": "DJI Dock 2"})
+if r.get("code") != 200:
+    _, r = call("GET", "/devices")
+    stale = next((d for d in r["data"] if d["deviceSn"] == "DOCK-SMOKE-NE1"), None)
+    if stale:
+        call("DELETE", "/devices/%d" % stale["id"])
+    _, r = call("POST", "/devices", {"name": "冒烟离线机场", "deviceSn": "DOCK-SMOKE-NE1",
+                                     "deviceType": "DOCK", "deviceModel": "DJI Dock 2"})
 offline_dock = r["data"] if r.get("code") == 200 else None
 ok("自建离线机场", offline_dock is not None and offline_dock.get("status") == "OFFLINE", r)
+# 同一机场同时只允许一个活跃任务:上次崩溃可能残留,先撤销清场
+_, r = call("GET", "/wayline-jobs/page?page=1&size=50&dockSn=" + sim_dock["deviceSn"])
+for j in (r["data"]["rows"] or []):
+    if j["status"] in ("SENT", "READY", "QUEUED", "RUNNING", "PAUSED"):
+        call("POST", "/wayline-jobs/%d/undo" % j["id"])
 
 print("\n[1] 航线管理")
 _, r = call("GET", "/waylines")
@@ -153,20 +171,29 @@ time.sleep(3)
 _, r = call("GET", "/devices/%d/logs" % sim_dock["id"])
 files = r["data"]
 ok("日志清单 8 个(机场5+飞行器3)", len(files) == 8, len(files))
-targets = [f for f in files if f["module"] == "DOCK"][:2]
-_, r = call("POST", "/devices/%d/logs/upload" % sim_dock["id"], {"fileIds": [f["fileId"] for f in targets]})
-ok("上传指令送达", r.get("code") == 200)
-for _ in range(10):
-    time.sleep(2)
-    _, r = call("GET", "/devices/%d/logs" % sim_dock["id"])
-    ups = [f for f in r["data"] if f["fileId"] in (targets[0]["fileId"], targets[1]["fileId"])]
-    if all(f["status"] == "UPLOADED" for f in ups):
-        break
-ok("两文件上传完成带对象键", all(f["status"] == "UPLOADED" and f.get("objectKey") for f in ups), ups)
+targets = [f for f in files if f["module"] == "DOCK" and f["status"] == "FOUND"][:2]
+if not targets:
+    # 历史运行已把文件全部传成 UPLOADED,重传会被拒;此处只验证清单可读
+    ok("无可重传文件(均已上传,历史运行覆盖)", all(f.get("objectKey") for f in files if f["status"] == "UPLOADED"))
+else:
+    ids = [f["fileId"] for f in targets]
+    _, r = call("POST", "/devices/%d/logs/upload" % sim_dock["id"], {"fileIds": ids})
+    ok("上传指令送达", r.get("code") == 200, r)
+    ups = []
+    for _ in range(10):
+        time.sleep(2)
+        _, r = call("GET", "/devices/%d/logs" % sim_dock["id"])
+        ups = [f for f in r["data"] if f["fileId"] in ids]
+        if len(ups) == len(ids) and all(f["status"] == "UPLOADED" for f in ups):
+            break
+    ok("所选文件上传完成带对象键", ups and all(f["status"] == "UPLOADED" and f.get("objectKey") for f in ups), ups)
 
 print("\n[7] AI 目标识别")
 _, r = call("GET", "/devices/%d/ai/config" % sim_dock["id"])
-ok("默认配置可读", r.get("code") == 200 and r["data"]["confidenceValue"] == 80, r)
+# 上次运行若中途崩溃,末尾恢复默认的清理不会执行,库里会残留保存值——只验证可读且值合法
+ok("AI 配置可读(默认或上次保存值)",
+   r.get("code") == 200 and r["data"]["confidenceValue"] in range(50, 100)
+   and isinstance(r["data"]["filterTypes"], list), r)
 _, r = call("PUT", "/devices/%d/ai/config" % sim_dock["id"], {
     "enabled": True, "followEnabled": True, "model": "河道目标检测",
     "confidenceMode": "CUSTOM", "confidenceValue": 70, "filterTypes": ["PERSON", "BOAT"]})
@@ -178,6 +205,118 @@ _, r = call("GET", "/devices/%d/ai/targets/page?page=1&size=10" % sim_dock["id"]
 rows = r["data"]["rows"]
 ok("识别记录流入(类型受限 PERSON/BOAT)", len(rows) >= 1 and all(
     x["targetType"] in ("PERSON", "BOAT") for x in rows), r["data"])
+
+print("\n[8] 直播(Dock 3 live)")
+cap = data_of(api("GET", "/devices/%d/live/capacity" % sim_dock["id"]))
+ok("直播能力已上报", bool(cap and json.loads(cap["capacityJson"] or "{}").get("capacity")), cap)
+video = "%s/165-0/normal-0" % sim_dock["deviceSn"]
+r = api("POST", "/devices/%d/live/start" % sim_dock["id"], {
+    "videoId": video, "urlType": "RTMP", "url": "rtmp://media.local/live/smoke",
+    "videoQuality": 3, "videoType": "zoom"})
+ok("开启直播", r.get("code") == 200 and r["data"]["status"] == "PUSHING", r)
+sid = r["data"]["id"]
+r = api("POST", "/devices/%d/live/streams/%d/quality" % (sim_dock["id"], sid), {"videoQuality": 4})
+ok("切换清晰度", r.get("code") == 200 and r["data"]["videoQuality"] == 4, r)
+r = api("POST", "/devices/%d/live/lens" % sim_dock["id"], {"videoType": "ir"})
+ok("切换镜头", r.get("code") == 200, r)
+r = api("POST", "/devices/%d/live/streams/%d/camera" % (sim_dock["id"], sid), {"cameraPosition": 1})
+ok("切换相机位(舱外)", r.get("code") == 200, r)
+r = api("POST", "/devices/%d/live/streams/%d/stop" % (sim_dock["id"], sid))
+ok("停止直播", r.get("code") == 200 and r["data"]["status"] == "STOPPED", r)
+r = api("POST", "/devices/%d/live/streams/%d/stop" % (sim_dock["id"], sid))
+ok("重复停流被拒", r.get("code") != 200, r)
+
+print("\n[9] 条件任务与媒体闭环(Dock 3 wayline/media)")
+r = api("POST", "/wayline-jobs", {
+    "dockId": sim_dock["id"], "waylineId": wl["id"], "jobType": "CONDITION",
+    "rthAltitude": 100,
+    "readyConditionsJson": json.dumps({"battery_capacity": 80, "begin_time": int(time.time() * 1000)})})
+ok("条件任务下发", r.get("code") == 200 and r["data"]["jobType"] == "CONDITION", r)
+cond_id, cond_fid = r["data"]["id"], r["data"]["flightId"]
+status = ""
+for _ in range(25):
+    time.sleep(2)
+    status = data_of(api("GET", "/wayline-jobs/%d" % cond_id))["status"]
+    if status in ("SUCCESS", "FAILED", "CANCELED"):
+        break
+ok("条件就绪→资源请求→执行完成", status == "SUCCESS", status)
+time.sleep(6)   # 等媒体回调陆续入库
+r = api("GET", "/devices/%d/media/page?page=1&size=10" % sim_dock["id"])
+rows = r["data"]["rows"]
+ok("媒体文件入库(3 原始 + 3 预览)", len(rows) >= 6 and
+   sum(1 for x in rows if x["isOriginal"]) >= 3, len(rows))
+ok("媒体带回归属任务名", any(x.get("flightName") for x in rows), rows[0] if rows else None)
+job = data_of(api("GET", "/wayline-jobs/%d" % cond_id))
+ok("任务媒体数=实际原始文件数", job["mediaCount"] == sum(
+    1 for x in rows if x["isOriginal"] and x["flightId"] == cond_fid), job["mediaCount"])
+pr = data_of(api("GET", "/devices/%d/media/priority" % sim_dock["id"]))
+ok("设备上报了优先上传任务", pr and pr["flightId"] == cond_fid, pr)
+r = api("POST", "/devices/%d/media/prioritize" % sim_dock["id"], {"flightId": cond_fid})
+ok("云端指定优先上传", r.get("code") == 200, r)
+r = api("POST", "/wayline-jobs", {"dockId": sim_dock["id"], "waylineId": wl["id"], "jobType": "CONDITION"})
+ok("无条件条件任务被拒", r.get("code") != 200, r)
+
+print("\n[10] 任务暂停 / 恢复 / 一键返航")
+r = api("POST", "/wayline-jobs", {"dockId": sim_dock["id"], "waylineId": wl["id"], "jobType": "IMMEDIATE"})
+pause_id = r["data"]["id"]
+status = ""
+for _ in range(20):
+    time.sleep(2)
+    status = data_of(api("GET", "/wayline-jobs/%d" % pause_id))["status"]
+    if status == "RUNNING":
+        break
+ok("任务进入执行中", status == "RUNNING", status)
+r = api("POST", "/wayline-jobs/%d/pause" % pause_id)
+ok("下发暂停", r.get("code") == 200 and r["data"]["status"] == "PAUSED", r)
+time.sleep(3)
+ok("事件驱动维持暂停态", data_of(api("GET", "/wayline-jobs/%d" % pause_id))["status"] == "PAUSED")
+r = api("POST", "/wayline-jobs/%d/recovery" % pause_id)
+ok("下发恢复", r.get("code") == 200 and r["data"]["status"] == "RUNNING", r)
+status = ""
+for _ in range(15):
+    time.sleep(2)
+    status = data_of(api("GET", "/wayline-jobs/%d" % pause_id))["status"]
+    if status in ("SUCCESS", "FAILED", "CANCELED"):
+        break
+ok("恢复后执行完成", status == "SUCCESS", status)
+r = api("POST", "/wayline-jobs/%d/return-home" % pause_id)
+ok("已结束任务返航被拒", r.get("code") != 200, r)
+
+print("\n[11] 空中下发航线(Dock 3 in-flight wayline)")
+api("POST", "/devices/%d/commands" % sim_dock["id"], {"method": "drone_open"})
+api("POST", "/devices/%d/commands" % sim_dock["id"],
+    {"method": "takeoff_to_point", "data": {"longitude": 116.40, "latitude": 39.91, "height": 80}})
+time.sleep(2)
+r = api("POST", "/wayline-jobs/in-flight", {"dockId": sim_dock["id"], "waylineId": wl["id"]})
+ok("空中下发", r.get("code") == 200 and r["data"]["jobChannel"] == "IN_FLIGHT", r)
+inflight_id = r["data"]["id"]
+status = ""
+for _ in range(15):
+    time.sleep(2)
+    status = data_of(api("GET", "/wayline-jobs/%d" % inflight_id))["status"]
+    if status == "RUNNING":
+        break
+ok("空中航线执行中", status == "RUNNING", status)
+r = api("POST", "/wayline-jobs/%d/in-flight/stop" % inflight_id)
+ok("空中悬停", r.get("code") == 200, r)
+time.sleep(3)
+ok("悬停后任务暂停态", data_of(api("GET", "/wayline-jobs/%d" % inflight_id))["status"] == "PAUSED")
+r = api("POST", "/wayline-jobs/%d/in-flight/recover" % inflight_id)
+ok("空中恢复", r.get("code") == 200, r)
+status = ""
+for _ in range(15):
+    time.sleep(2)
+    status = data_of(api("GET", "/wayline-jobs/%d" % inflight_id))["status"]
+    if status in ("SUCCESS", "FAILED", "CANCELED"):
+        break
+ok("空中航线完成", status == "SUCCESS", status)
+r = api("POST", "/wayline-jobs/%d/resume" % inflight_id)
+ok("空中任务不支持断点续飞", r.get("code") != 200, r)
+
+print("\n[12] HMS 健康告警")
+r = api("GET", "/devices/%d/hms/page?page=1&size=10" % sim_dock["id"])
+ok("HMS 告警入库", r.get("code") == 200 and r["data"]["total"] >= 1, r["data"]["total"])
+ok("HMS 含等级与描述", all(x["level"] in ("NOTICE", "WARN", "ERROR") and x["code"] for x in r["data"]["rows"]))
 
 # ---------- 清理 ----------
 call("PUT", "/devices/%d/ai/config" % sim_dock["id"], {
