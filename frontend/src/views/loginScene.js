@@ -44,15 +44,15 @@ const HOVER_Y = 7.2       // 巡航起点悬停高度
 const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 
-/** 径向渐变光斑贴图:舱内辉光 / 信标光晕共用 */
-function glowTexture() {
+/** 径向渐变光斑贴图:舱内辉光 / 信标光晕共用;rgb 可换色(青色纹理染红会发暗紫,必须用红基色) */
+function glowTexture(rgb = [120, 210, 255]) {
   const c = document.createElement('canvas')
   c.width = c.height = 128
   const ctx = c.getContext('2d')
   const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64)
-  g.addColorStop(0, 'rgba(120, 210, 255, 0.9)')
-  g.addColorStop(0.4, 'rgba(56, 189, 248, 0.35)')
-  g.addColorStop(1, 'rgba(56, 189, 248, 0)')
+  g.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.9)`)
+  g.addColorStop(0.4, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.35)`)
+  g.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`)
   ctx.fillStyle = g
   ctx.fillRect(0, 0, 128, 128)
   const tex = new THREE.CanvasTexture(c)
@@ -230,50 +230,126 @@ export function createLoginScene(container, { onTelemetry } = {}) {
     wpMarks.push(oct)
   }
 
-  /* ---------- 厂区剪影(航线外围的深蓝自发光建筑 + 罐区) ---------- */
+  /* ---------- 科技城市天际线:半透明玻璃楼体 + 霓虹竖棱 / 横向光带 / 悬浮光环 ----------
+     不复刻真实地标——全息玻璃楼群靠「透亮体块 + 发光棱线 + 层次退台」自然成立 */
+  // 半透明「玻璃楼体」:透视感 + 自发光,像全息投影水晶楼;不写深度让楼群层叠透光
   const bMat = new THREE.MeshStandardMaterial({
-    color: 0x16386f, emissive: 0x0d2a66, emissiveIntensity: 0.85, metalness: 0.3, roughness: 0.6
+    color: 0x0a2a5e, emissive: 0x0d3a8a, emissiveIntensity: 0.85,
+    metalness: 0.15, roughness: 0.35,
+    transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide
   })
-  // 加性混合亮线框 + 立面发光横带 ×2:深色剪影而不发黑,贴合霓虹科技风
+  // 亮棱线 / 竖棱 / 光环:普通混合高亮白青,在深蓝渐变天空上直接压出清晰霓虹;
+  // 半透明楼体层层叠加时也保持可读,不受加性混合的饱和截断影响
   const eMat = new THREE.LineBasicMaterial({
-    color: 0x7fc4ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending
+    color: 0xbfe9ff, transparent: true, opacity: 0.95
   })
   const bandMat = new THREE.MeshBasicMaterial({
-    color: 0x8fd4ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false
+    color: 0xd8f3ff, transparent: true, opacity: 0.95, depthWrite: false
   })
-  const BUILDINGS = [
-    [22, 3.2, -14, 6, 4.5], [-24, 2.4, 10, 7, 4], [18, 4.2, 20, 5, 6],
-    [-19, 2.8, -18, 6, 3.5], [27, 3.6, 7, 4.5, 5], [-7, 2.2, 25, 7, 3]
-  ]
-  for (const [x, h, z, w, d] of BUILDINGS) {
+  // 横向光带 / 楼顶亮线:比主棱条暗一档
+  const winMat = new THREE.MeshBasicMaterial({
+    color: 0xaee2ff, transparent: true, opacity: 0.9, depthWrite: false
+  })
+  const beaconRed = new THREE.MeshBasicMaterial({ color: 0xff5470, transparent: true })
+  const redGlowTex = glowTexture([255, 128, 148])
+  const holoRings = []   // 主塔悬浮光环:tick 中绕竖轴进动
+  let holoOct = null     // 退台塔顶悬浮全息体
+
+  /** 方塔:暗楼体 + 亮棱线 + 四条竖向霓虹棱 + 若干层横向光带;y0 支持退台叠层 */
+  const tower = (w, d, h, x, z, bands = [], y0 = 0) => {
     const geo = new THREE.BoxGeometry(w, h, d)
-    const box = new THREE.Mesh(geo, bMat)
-    box.position.set(x, h / 2, z)
-    scene.add(box)
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), eMat)
-    edges.position.copy(box.position)
-    scene.add(edges)
-    for (const hy of [0.82, 0.45]) {
-      const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.06, 0.16, d + 0.06), bandMat)
-      band.position.set(x, h * hy, z)
-      scene.add(band)
+    const m = new THREE.Mesh(geo, bMat)
+    m.position.set(x, y0 + h / 2, z)
+    scene.add(m)
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), eMat)
+    e.position.copy(m.position)
+    scene.add(e)
+    for (const [ox, oz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.2, h, 0.2), bandMat)
+      strip.position.set(x + (ox * w) / 2, y0 + h / 2, z + (oz * d) / 2)
+      scene.add(strip)
     }
-  }
-  for (const [x, z, r, h] of [[26, -6, 1.5, 5], [-27, -4, 1.9, 6.5]]) {
-    const geo = new THREE.CylinderGeometry(r, r, h, 22)
-    const tank = new THREE.Mesh(geo, bMat)
-    tank.position.set(x, h / 2, z)
-    scene.add(tank)
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), eMat)
-    edges.position.copy(tank.position)
-    scene.add(edges)
-    for (const hy of [0.7, 0.35]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.04, 0.09, 8, 36), bandMat)
-      ring.rotation.x = Math.PI / 2
-      ring.position.set(x, h * hy, z)
-      scene.add(ring)
+    for (const hy of bands) {
+      const bd = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.22, d + 0.3), winMat)
+      bd.position.set(x, y0 + h * hy, z)
+      scene.add(bd)
     }
+    // 楼顶亮盖:给透明楼体勾一条顶轮廓线,像点亮的玻璃冠
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.24, 0.16, d + 0.24), winMat)
+    cap.position.set(x, y0 + h - 0.06, z)
+    scene.add(cap)
+    return y0 + h
   }
+
+  /** 航空障碍灯:红色闪光点 + 光晕 */
+  const skyBeacon = (x, y, z) => {
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 10), beaconRed)
+    dot.position.set(x, y, z)
+    scene.add(dot)
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: redGlowTex, color: 0xff7a90, transparent: true, opacity: 0.9, depthWrite: false
+    }))
+    glow.scale.setScalar(2.6)
+    glow.position.set(x, y, z)
+    scene.add(glow)
+  }
+
+  // ① 阶梯退台塔:三层收分,塔顶悬浮全息八面体
+  {
+    const X = -34, Z = -11
+    let top = tower(2.7, 2.7, 4.0, X, Z, [0.55, 0.95])
+    top = tower(2.1, 2.1, 3.2, X, Z, [0.6], top)
+    tower(1.5, 1.5, 2.6, X, Z, [0.5, 0.9], top)
+    holoOct = new THREE.Group()
+    holoOct.position.set(X, 11.3, Z)
+    holoOct.add(
+      new THREE.Mesh(new THREE.OctahedronGeometry(0.95), bandMat),
+      new THREE.Mesh(new THREE.OctahedronGeometry(0.5), winMat)
+    )
+    scene.add(holoOct)
+  }
+
+  // ② 双子塔:一高一矮,高的戴红色障碍灯
+  tower(1.9, 1.9, 11.5, -31, -7, [0.3, 0.55, 0.8])
+  tower(1.6, 1.6, 12.8, -29.2, -12, [0.35, 0.62, 0.88])
+  skyBeacon(-29.2, 13.15, -12)
+
+  // ③ 主塔:六棱数据尖塔 + 三道悬浮光环 + 塔尖辉光
+  {
+    const X = -24.5, Z = -10, H = 14
+    const geo = new THREE.CylinderGeometry(1.35, 1.35, H, 6)
+    const spire = new THREE.Mesh(geo, bMat)
+    spire.position.set(X, H / 2, Z)
+    scene.add(spire)
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), eMat)
+    e.position.copy(spire.position)
+    scene.add(e)
+    for (const [hy, r, tilt] of [[0.42, 2.0, 0.16], [0.64, 2.25, -0.2], [0.86, 2.5, 0.24]]) {
+      const grp = new THREE.Group()
+      grp.position.set(X, H * hy, Z)
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.09, 8, 44), bandMat)
+      ring.rotation.x = Math.PI / 2 + tilt
+      grp.add(ring)
+      scene.add(grp)
+      holoRings.push(grp)
+    }
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.8, 8), bMat)
+    mast.position.set(X, H + 0.9, Z)
+    scene.add(mast)
+    const tip = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: 0x9fe0ff, transparent: true, opacity: 0.9, depthWrite: false
+    }))
+    tip.scale.setScalar(2.6)
+    tip.position.set(X, H + 1.4, Z)
+    scene.add(tip)
+    skyBeacon(X, H + 2.0, Z)
+  }
+
+  // ④ 中塔群 + 裙楼:填出城市密度
+  tower(2.2, 2.2, 8.6, -21, -14, [0.4, 0.78])
+  tower(1.7, 1.7, 10.2, -18.5, -8.5, [0.3, 0.6, 0.92])
+  tower(2.5, 2.5, 6.6, -15.5, -12, [0.5, 0.85])
+  tower(3.2, 2.2, 3.8, -26.5, -5.5, [0.5])
 
   /* ---------- 无人机 ---------- */
   const drone = new THREE.Group()   // 位置 + 航向(lookAt)
@@ -540,6 +616,13 @@ export function createLoginScene(container, { onTelemetry } = {}) {
     const blink = Math.sin(t * 4.2) > 0.2
     beaconMat.opacity = blink ? 1 : 0.15
     beaconGlow.material.opacity = blink ? 0.85 : 0.1
+    // 城市楼群:障碍灯慢闪 + 主塔光环进动 + 悬浮全息体缓转浮沉
+    beaconRed.opacity = Math.sin(t * 2.6) > -0.35 ? 1 : 0.25
+    for (const g of holoRings) g.rotation.y += dt * 0.55
+    if (holoOct) {
+      holoOct.rotation.y += dt * 0.9
+      holoOct.position.y = 11.3 + Math.sin(t * 1.4) * 0.35
+    }
     chase.forEach((m, i) => { m.opacity = 0.18 + 0.6 * Math.max(0, Math.sin(t * 2.4 - i * 0.55)) })
 
     // 扫描脉冲环
@@ -614,6 +697,7 @@ export function createLoginScene(container, { onTelemetry } = {}) {
         }
       })
       glowTex.dispose()
+      redGlowTex.dispose()
       renderer.dispose()
       if (renderer.domElement.parentNode === container) container.removeChild(renderer.domElement)
     }
