@@ -97,6 +97,9 @@
         <el-button type="primary" plain :loading="me.pwdSaving" @click="changePwd">修改密码</el-button>
       </el-form>
     </el-drawer>
+
+    <!-- AI 值班助手:全局悬浮球 -->
+    <CopilotBall />
   </el-container>
 </template>
 
@@ -106,6 +109,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Fold, Expand, ArrowDown } from '@element-plus/icons-vue'
 import http from '../api'
+import CopilotBall from '../components/CopilotBall.vue'
 
 const router = useRouter()
 const collapsed = ref(false)
