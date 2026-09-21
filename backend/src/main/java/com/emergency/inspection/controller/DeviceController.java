@@ -90,6 +90,15 @@ public class DeviceController {
         return ApiResponse.ok(deviceService.osdOf(deviceService.require(id).getDeviceSn()));
     }
 
+    /** 航迹回放:近 minutes 分钟的飞行轨迹点(时间升序) */
+    @GetMapping("/{id}/track")
+    public ApiResponse<List<com.emergency.inspection.entity.DeviceTrackPoint>> track(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "120") int minutes,
+            @RequestParam(defaultValue = "2000") int limit) {
+        return ApiResponse.ok(deviceService.track(id, minutes, limit));
+    }
+
     /**
      * 结构化遥测:控制页直接渲染用。
      * 机场返回舱盖/推杆/环境/充电等区块,飞行器返回姿态/定位/负载等区块。

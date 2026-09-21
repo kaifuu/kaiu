@@ -13,12 +13,14 @@ import com.emergency.inspection.entity.DeviceAiTarget;
 import com.emergency.inspection.entity.DeviceEvent;
 import com.emergency.inspection.entity.DeviceLogFile;
 import com.emergency.inspection.entity.DeviceOsd;
+import com.emergency.inspection.entity.DeviceTrackPoint;
 import com.emergency.inspection.mapper.DeviceAiConfigMapper;
 import com.emergency.inspection.mapper.DeviceAiTargetMapper;
 import com.emergency.inspection.mapper.DeviceEventMapper;
 import com.emergency.inspection.mapper.DeviceLogFileMapper;
 import com.emergency.inspection.mapper.DeviceMapper;
 import com.emergency.inspection.mapper.DeviceOsdMapper;
+import com.emergency.inspection.mapper.DeviceTrackPointMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,6 +47,8 @@ public class DeviceService {
     private final DeviceAiConfigMapper aiConfigMapper;
     private final DeviceAiTargetMapper aiTargetMapper;
     private final DeviceLogFileMapper logFileMapper;
+    private final DeviceTrackPointMapper trackMapper;
+    private final SafeAlertService safeAlertService;
     private final ObjectMapper objectMapper;
 
     /* ==================== 台账 ==================== */
@@ -319,6 +323,30 @@ public class DeviceService {
         } else {
             osdMapper.updateById(row);
         }
+        // 飞行器(带经纬度)追加轨迹点供回放,并喂给安全预警规则引擎
+        if (row.getLongitude() != null && row.getLatitude() != null) {
+            DeviceTrackPoint point = new DeviceTrackPoint();
+            point.setDeviceSn(sn);
+            point.setTs(LocalDateTime.now());
+            point.setLongitude(row.getLongitude());
+            point.setLatitude(row.getLatitude());
+            point.setHeight(row.getHeight());
+            point.setSpeed(decimalOrNull(osd, "horizontal_speed"));
+            point.setHeading(decimalOrNull(osd, "attitude_head"));
+            point.setBattery(battery);
+            trackMapper.insert(point);
+            safeAlertService.onOsd(sn, osd);
+        }
+    }
+
+    /** 航迹回放:近 N 分钟内时间升序轨迹点 */
+    public List<DeviceTrackPoint> track(Long id, int minutes, int limit) {
+        String sn = require(id).getDeviceSn();
+        return trackMapper.selectList(Wrappers.<DeviceTrackPoint>lambdaQuery()
+                .eq(DeviceTrackPoint::getDeviceSn, sn)
+                .ge(DeviceTrackPoint::getTs, LocalDateTime.now().minusMinutes(Math.max(minutes, 1)))
+                .orderByAsc(DeviceTrackPoint::getTs)
+                .last("limit " + Math.min(Math.max(limit, 1), 5000)));
     }
 
     public DeviceOsd osdOf(String sn) {
