@@ -22,6 +22,8 @@ const PAGES = [
   ['/tasks', '巡检任务'],
   ['/hazards', '隐患上报'],
   ['/events', '应急事件'],
+  ['/fences', '电子围栏'],
+  ['/safe-alerts', '安全预警'],
   ['/docks', '机场管理'],
   ['/drones', '无人机管理'],
   ['/issues', '问题清单'],
@@ -150,6 +152,23 @@ for (const [path, title] of PAGES) {
   } else if (path === '/dashboard') {
     const charts = await page.locator('canvas').count()
     charts > 0 ? ok(`${title}(图表 ${charts} 个)`) : bad(`${title} 图表`, '未渲染出 canvas')
+    // 工作台改版:欢迎横幅 + 8 指标卡 + 4 列表卡
+    const tiles = await page.locator('.tile').count()
+    const banner = await page.locator('.banner').count()
+    const lists = await page.locator('.list-panel').count()
+    tiles === 8 && banner === 1 && lists === 4
+      ? ok(`工作台改版:横幅 + 8 指标卡 + ${lists} 列表卡`)
+      : bad('工作台改版', `横幅=${banner} 指标卡=${tiles} 列表卡=${lists}`)
+  } else if (path === '/fences') {
+    // 围栏页:种子 3 条围栏 + SVG 地图上的围栏图形
+    const shapes = await page.locator('.fence-map polygon, .fence-map circle').count()
+    rows >= 3 && shapes >= 3
+      ? ok(`电子围栏:${rows} 条围栏,地图绘制 ${shapes} 个图形`)
+      : bad('电子围栏', `围栏行=${rows} 地图图形=${shapes}(种子未生效?)`)
+  } else if (path === '/safe-alerts') {
+    rows >= 3
+      ? ok(`安全预警:${rows} 条记录(含历史种子)`)
+      : bad('安全预警', `仅 ${rows} 行(种子未生效?)`)
   } else if (rows === 0 && emptyText === 0) {
     bad(`${title} 表格`, '既无数据行也无空状态')
   } else {
@@ -320,8 +339,49 @@ if (await droneRow.count()) {
     ? ok(`无人机控制页:姿态罗盘 + 电池环 + ${btns} 条指令`)
     : bad('无人机控制页', `罗盘=${compass} 电池环=${ring}`)
   await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-drone-control.png`, fullPage: true })
+
+  // 航迹回放抽屉:轨迹地图 + 时间轴 + 倍速(模拟器在线即有遥测轨迹)
+  await page.locator('button:has-text("航迹回放")').first().click()
+  await page.waitForTimeout(1800)
+  const rpDrawer = await page.locator('.el-drawer:has-text("航迹回放")').isVisible().catch(() => false)
+  const rpPoints = await page.locator('.replay-stats b').first().innerText().catch(() => '0')
+  const rpSlider = await page.locator('.el-drawer .el-slider').count()
+  rpDrawer && rpSlider === 1
+    ? ok(`航迹回放:抽屉 + 时间轴 + 倍速,轨迹点 ${rpPoints}`)
+    : bad('航迹回放', `抽屉=${rpDrawer} 时间轴=${rpSlider}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-drone-replay.png`, fullPage: true })
+  // 之前步骤的抽屉可能仍挂载在 DOM(display:none),按类名取 first 会命中隐藏节点,改用 Escape 关闭最上层
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(600)
 } else {
   bad('无人机控制页', '列表中没有无人机')
+}
+
+// AI 值班助手:全局悬浮球 + 对话窗问答
+console.log('\n[6.5] AI 值班助手')
+{
+  const ball = await page.locator('.copilot-ball').count()
+  ball === 1 ? ok('全局悬浮球已挂载') : bad('AI 值班助手', `悬浮球=${ball}`)
+  await page.locator('.copilot-ball').click()
+  await page.waitForTimeout(1200)
+  const panel = await page.locator('.copilot-panel').isVisible().catch(() => false)
+  const chips = await page.locator('.cp-chip').count()
+  panel && chips > 0
+    ? ok(`对话窗打开:${chips} 个快捷问题`)
+    : bad('AI 对话窗', `面板=${panel} 快捷问题=${chips}`)
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-copilot-open.png` })
+  i++
+  // 点一个快捷问题:应出现打字机回复
+  await page.locator('.cp-chip').first().click()
+  await page.waitForTimeout(2500)
+  const botMsg = await page.locator('.cp-msg.bot .cp-bubble').count()
+  botMsg > 0
+    ? ok('快捷问答:助手已回复(打字机输出)')
+    : bad('快捷问答', '未出现助手回复')
+  await page.screenshot({ path: `${OUT}/${String(i).padStart(2, '0')}-copilot-answer.png` })
+  i++
+  await page.locator('.cp-close').click()
+  await page.waitForTimeout(400)
 }
 
 // 算法管理:算法卡配置 + 手动执行识别 + 臭气分布图与溯源
