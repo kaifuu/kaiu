@@ -1,16 +1,22 @@
 package com.emergency.inspection.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.emergency.inspection.entity.AiAlgorithmAlarm;
+import com.emergency.inspection.entity.Device;
 import com.emergency.inspection.entity.EmergencyEvent;
 import com.emergency.inspection.entity.Hazard;
 import com.emergency.inspection.entity.InspectPlan;
 import com.emergency.inspection.entity.InspectPoint;
 import com.emergency.inspection.entity.InspectTask;
+import com.emergency.inspection.entity.SafeAlert;
+import com.emergency.inspection.mapper.AiAlgorithmAlarmMapper;
+import com.emergency.inspection.mapper.DeviceMapper;
 import com.emergency.inspection.mapper.EmergencyEventMapper;
 import com.emergency.inspection.mapper.HazardMapper;
 import com.emergency.inspection.mapper.InspectPlanMapper;
 import com.emergency.inspection.mapper.InspectPointMapper;
 import com.emergency.inspection.mapper.InspectTaskMapper;
+import com.emergency.inspection.mapper.SafeAlertMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +38,9 @@ public class DashboardService {
     private final InspectTaskMapper taskMapper;
     private final HazardMapper hazardMapper;
     private final EmergencyEventMapper eventMapper;
+    private final DeviceMapper deviceMapper;
+    private final AiAlgorithmAlarmMapper alarmMapper;
+    private final SafeAlertMapper safeAlertMapper;
 
     public Map<String, Object> stats() {
         Map<String, Object> data = new LinkedHashMap<>();
@@ -47,6 +56,13 @@ public class DashboardService {
         data.put("eventActive", eventMapper.selectCount(Wrappers.<EmergencyEvent>lambdaQuery()
                 .in(EmergencyEvent::getStatus, List.of(EmergencyEvent.Status.PENDING, EmergencyEvent.Status.RESPONDING))));
         data.put("eventTotal", eventMapper.selectCount(Wrappers.<EmergencyEvent>lambdaQuery()));
+        // 设备与 AI 态势:机场/无人机在线数、今日 AI 告警数
+        data.put("dockOnline", deviceMapper.selectCount(Wrappers.<Device>lambdaQuery()
+                .eq(Device::getDeviceType, Device.DeviceType.DOCK).eq(Device::getStatus, Device.Status.ONLINE)));
+        data.put("droneOnline", deviceMapper.selectCount(Wrappers.<Device>lambdaQuery()
+                .eq(Device::getDeviceType, Device.DeviceType.DRONE).eq(Device::getStatus, Device.Status.ONLINE)));
+        data.put("alarmToday", alarmMapper.selectCount(Wrappers.<AiAlgorithmAlarm>lambdaQuery()
+                .ge(AiAlgorithmAlarm::getOccurredAt, LocalDate.now().atStartOfDay())));
 
         data.put("pointByRisk", groupPointByRisk());
         data.put("taskByStatus", groupTaskByStatus());
@@ -61,6 +77,11 @@ public class DashboardService {
         data.put("recentHazards", hazardMapper.selectList(Wrappers.<Hazard>lambdaQuery()
                 .ne(Hazard::getStatus, Hazard.Status.CLOSED)
                 .orderByDesc(Hazard::getReportTime).last("limit 6")));
+        // 飞行安全预警:最近 6 条 + 待处理数(第 4 列表卡)
+        data.put("safeAlerts", safeAlertMapper.selectList(Wrappers.<SafeAlert>lambdaQuery()
+                .orderByDesc(SafeAlert::getOccurredAt).last("limit 6")));
+        data.put("safeAlertPending", safeAlertMapper.selectCount(
+                Wrappers.<SafeAlert>lambdaQuery().eq(SafeAlert::getStatus, SafeAlert.Status.PENDING)));
         return data;
     }
 
