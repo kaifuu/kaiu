@@ -230,18 +230,17 @@ export function createLoginScene(container, { onTelemetry } = {}) {
     wpMarks.push(oct)
   }
 
-  /* ---------- 科技城市天际线:半透明玻璃楼体 + 霓虹竖棱 / 横向光带 / 悬浮光环 ----------
-     不复刻真实地标——全息玻璃楼群靠「透亮体块 + 发光棱线 + 层次退台」自然成立 */
-  // 半透明「玻璃楼体」:透视感 + 自发光,像全息投影水晶楼;不写深度让楼群层叠透光
+  /* ---------- 未来都市天际线:全息玻璃楼体 + 细霓虹棱 / 数据流 / 悬浮光环 / 穿梭光轨 ----------
+     不复刻真实地标——未来感靠「更透的玻璃体块 + 纤细发光线 + 能量流动」自然成立 */
+  // 半透明「玻璃楼体」:更透更亮,像全息投影水晶楼;不写深度让楼群层叠透光
   const bMat = new THREE.MeshStandardMaterial({
-    color: 0x0a2a5e, emissive: 0x0d3a8a, emissiveIntensity: 0.85,
-    metalness: 0.15, roughness: 0.35,
-    transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide
+    color: 0x0b2f66, emissive: 0x1550c8, emissiveIntensity: 1.0,
+    metalness: 0.1, roughness: 0.3,
+    transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide
   })
-  // 亮棱线 / 竖棱 / 光环:普通混合高亮白青,在深蓝渐变天空上直接压出清晰霓虹;
-  // 半透明楼体层层叠加时也保持可读,不受加性混合的饱和截断影响
+  // 楼体描边:降透明度让 1px 边框线退成若隐若现的细线,不与霓虹棱线抢戏
   const eMat = new THREE.LineBasicMaterial({
-    color: 0xbfe9ff, transparent: true, opacity: 0.95
+    color: 0x86bfe8, transparent: true, opacity: 0.45
   })
   const bandMat = new THREE.MeshBasicMaterial({
     color: 0xd8f3ff, transparent: true, opacity: 0.95, depthWrite: false
@@ -252,10 +251,15 @@ export function createLoginScene(container, { onTelemetry } = {}) {
   })
   const beaconRed = new THREE.MeshBasicMaterial({ color: 0xff5470, transparent: true })
   const redGlowTex = glowTexture([255, 128, 148])
+  const flowMat = new THREE.MeshBasicMaterial({ color: 0xeafcff, transparent: true, opacity: 0.95, depthWrite: false })
+  // 数据流 / 光轨 / 天线端点的辉光:软光斑贴图比实体小盒在远景上显眼得多
+  const flowSpriteMat = new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity: 0.95, depthWrite: false })
+  const upFlows = []     // 楼体数据流:亮粒沿竖棱攀升
+  const skimmers = []    // 高空穿梭光轨:楼群间穿行的未来飞行器
   const holoRings = []   // 主塔悬浮光环:tick 中绕竖轴进动
   let holoOct = null     // 退台塔顶悬浮全息体
 
-  /** 方塔:暗楼体 + 亮棱线 + 四条竖向霓虹棱 + 若干层横向光带;y0 支持退台叠层 */
+  /** 方塔:全息玻璃楼体 + 细竖棱 + 横向光带 + 数据流攀升;y0 支持退台叠层 */
   const tower = (w, d, h, x, z, bands = [], y0 = 0) => {
     const geo = new THREE.BoxGeometry(w, h, d)
     const m = new THREE.Mesh(geo, bMat)
@@ -265,17 +269,28 @@ export function createLoginScene(container, { onTelemetry } = {}) {
     e.position.copy(m.position)
     scene.add(e)
     for (const [ox, oz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.2, h, 0.2), bandMat)
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.09, h, 0.09), bandMat)
       strip.position.set(x + (ox * w) / 2, y0 + h / 2, z + (oz * d) / 2)
       scene.add(strip)
     }
+    // 数据流:随机三条竖棱上有辉光点 + 细拖尾循环攀升,能量在楼体里向上流动
+    for (let i = 0; i < 3; i++) {
+      const [ox, oz] = [[-1, -1], [1, -1], [-1, 1], [1, 1]][(Math.random() * 4) | 0]
+      const flow = new THREE.Group()
+      const sp = new THREE.Sprite(flowSpriteMat)
+      sp.scale.setScalar(0.7)
+      flow.add(sp, new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.8, 0.1), flowMat))
+      flow.position.set(x + (ox * w) / 2, y0, z + (oz * d) / 2)
+      scene.add(flow)
+      upFlows.push({ mesh: flow, y0, h, speed: 1.2 + Math.random() * 1.6, off: Math.random() })
+    }
     for (const hy of bands) {
-      const bd = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.22, d + 0.3), winMat)
+      const bd = new THREE.Mesh(new THREE.BoxGeometry(w + 0.16, 0.12, d + 0.16), winMat)
       bd.position.set(x, y0 + h * hy, z)
       scene.add(bd)
     }
-    // 楼顶亮盖:给透明楼体勾一条顶轮廓线,像点亮的玻璃冠
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.24, 0.16, d + 0.24), winMat)
+    // 楼顶亮盖:细薄一条,像点亮的玻璃冠
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.18, 0.13, d + 0.18), winMat)
     cap.position.set(x, y0 + h - 0.06, z)
     scene.add(cap)
     return y0 + h
@@ -287,9 +302,9 @@ export function createLoginScene(container, { onTelemetry } = {}) {
     dot.position.set(x, y, z)
     scene.add(dot)
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: redGlowTex, color: 0xff7a90, transparent: true, opacity: 0.9, depthWrite: false
+      map: redGlowTex, color: 0xff7a90, transparent: true, opacity: 0.75, depthWrite: false
     }))
-    glow.scale.setScalar(2.6)
+    glow.scale.setScalar(2.2)
     glow.position.set(x, y, z)
     scene.add(glow)
   }
@@ -303,16 +318,32 @@ export function createLoginScene(container, { onTelemetry } = {}) {
     holoOct = new THREE.Group()
     holoOct.position.set(X, 11.3, Z)
     holoOct.add(
-      new THREE.Mesh(new THREE.OctahedronGeometry(0.95), bandMat),
-      new THREE.Mesh(new THREE.OctahedronGeometry(0.5), winMat)
+      new THREE.Mesh(new THREE.OctahedronGeometry(1.25), bandMat),
+      new THREE.Mesh(new THREE.OctahedronGeometry(0.65), winMat)
     )
     scene.add(holoOct)
   }
 
-  // ② 双子塔:一高一矮,高的戴红色障碍灯
+  // ② 双子塔:一高一矮,高的塔身两道细悬浮光环,矮的戴红色障碍灯
   tower(1.9, 1.9, 11.5, -31, -7, [0.3, 0.55, 0.8])
   tower(1.6, 1.6, 12.8, -29.2, -12, [0.35, 0.62, 0.88])
   skyBeacon(-29.2, 13.15, -12)
+  for (const [hy, r, tilt] of [[0.86, 1.5, 0.18], [0.96, 1.2, -0.22]]) {
+    const grp = new THREE.Group()
+    grp.position.set(-31, 11.5 * hy, -7)
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.08, 8, 44), bandMat)
+    ring.rotation.x = Math.PI / 2 + tilt
+    grp.add(ring)
+    scene.add(grp)
+    holoRings.push(grp)
+  }
+  // 双子塔之间的未来连廊:两道细桥把双塔连成一体
+  for (const y of [8.6, 10.4]) {
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(5.35, 0.14, 0.5), winMat)
+    bridge.position.set(-30.1, y, -9.5)
+    bridge.rotation.y = Math.atan2(5, 1.8)
+    scene.add(bridge)
+  }
 
   // ③ 主塔:六棱数据尖塔 + 三道悬浮光环 + 塔尖辉光
   {
@@ -324,10 +355,16 @@ export function createLoginScene(container, { onTelemetry } = {}) {
     const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), eMat)
     e.position.copy(spire.position)
     scene.add(e)
+    // 六棱竖棱:三根细霓虹棱强化「棱塔」特征,与方楼区分
+    for (const th of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.09, H, 0.09), bandMat)
+      strip.position.set(X + Math.sin(th) * 1.35, H / 2, Z + Math.cos(th) * 1.35)
+      scene.add(strip)
+    }
     for (const [hy, r, tilt] of [[0.42, 2.0, 0.16], [0.64, 2.25, -0.2], [0.86, 2.5, 0.24]]) {
       const grp = new THREE.Group()
       grp.position.set(X, H * hy, Z)
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.09, 8, 44), bandMat)
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.1, 8, 44), bandMat)
       ring.rotation.x = Math.PI / 2 + tilt
       grp.add(ring)
       scene.add(grp)
@@ -350,6 +387,27 @@ export function createLoginScene(container, { onTelemetry } = {}) {
   tower(1.7, 1.7, 10.2, -18.5, -8.5, [0.3, 0.6, 0.92])
   tower(2.5, 2.5, 6.6, -15.5, -12, [0.5, 0.85])
   tower(3.2, 2.2, 3.8, -26.5, -5.5, [0.5])
+  tower(1.6, 1.6, 9.4, -12.5, -16, [0.35, 0.7])   // 右翼补一座瘦高塔,填文案后方的空档
+
+  // ⑤ 高空穿梭光轨:横向拉长的辉光条在楼群间双向穿行,未来都市的飞行车流
+  for (let i = 0; i < 5; i++) {
+    const s = new THREE.Sprite(flowSpriteMat)
+    s.scale.set(1.6, 0.34, 1)
+    s.position.set(-44 + i * 11, 5.2 + (i % 2) * 2.4, -13 + (i % 3) * 4)
+    scene.add(s)
+    skimmers.push(s)
+  }
+
+  // ⑥ 塔尖细天线 + 端点辉光:给天际线加两个竖向音符
+  for (const [x, z, top, h] of [[-18.5, -8.5, 10.2, 2.4], [-12.5, -16, 9.4, 2.0]]) {
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, h, 6), bMat)
+    mast.position.set(x, top + h / 2, z)
+    scene.add(mast)
+    const tip = new THREE.Sprite(flowSpriteMat)
+    tip.scale.setScalar(0.5)
+    tip.position.set(x, top + h, z)
+    scene.add(tip)
+  }
 
   /* ---------- 无人机 ---------- */
   const drone = new THREE.Group()   // 位置 + 航向(lookAt)
@@ -623,6 +681,17 @@ export function createLoginScene(container, { onTelemetry } = {}) {
       holoOct.rotation.y += dt * 0.9
       holoOct.position.y = 11.3 + Math.sin(t * 1.4) * 0.35
     }
+    // 楼体数据流攀升(两端渐隐)+ 高空光轨双向穿行
+    for (const f of upFlows) {
+      const u = (t * (f.speed / f.h) + f.off) % 1
+      f.mesh.position.y = f.y0 + u * f.h
+      f.mesh.scale.setScalar(Math.sin(u * Math.PI))
+    }
+    skimmers.forEach((m, i) => {
+      m.position.x += dt * (2.4 + i * 0.6) * (i % 2 ? 1 : -1)
+      if (m.position.x > 10) m.position.x = -46
+      if (m.position.x < -46) m.position.x = 10
+    })
     chase.forEach((m, i) => { m.opacity = 0.18 + 0.6 * Math.max(0, Math.sin(t * 2.4 - i * 0.55)) })
 
     // 扫描脉冲环
