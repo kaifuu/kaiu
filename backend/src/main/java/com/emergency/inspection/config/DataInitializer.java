@@ -12,6 +12,7 @@ import com.emergency.inspection.entity.InspectDemand;
 import com.emergency.inspection.entity.InspectIssue;
 import com.emergency.inspection.entity.Pilot;
 import com.emergency.inspection.entity.Wayline;
+import com.emergency.inspection.entity.WaylineJob;
 import com.emergency.inspection.entity.VideoChannel;
 import com.emergency.inspection.entity.WorkOrder;
 import com.emergency.inspection.entity.Hazard;
@@ -86,6 +87,7 @@ public class DataInitializer implements CommandLineRunner {
     private final PilotMapper pilotMapper;
     private final VideoChannelMapper videoChannelMapper;
     private final WaylineMapper waylineMapper;
+    private final com.emergency.inspection.mapper.WaylineJobMapper waylineJobMapper;
     private final FirmwareMapper firmwareMapper;
     private final AiAlgorithmMapper algorithmMapper;
     private final AiAlgorithmAlarmMapper algoAlarmMapper;
@@ -130,6 +132,7 @@ public class DataInitializer implements CommandLineRunner {
             seedDockExtData();
             seedAlgorithmData();
             seedFenceData();
+            seedFlightData();
             return;
         }
         log.info("首次启动,写入演示数据 ...");
@@ -143,6 +146,7 @@ public class DataInitializer implements CommandLineRunner {
         seedDockExtData();
         seedAlgorithmData();
         seedFenceData();
+        seedFlightData();
 
         log.info("演示数据写入完成:租户 1 / 组织 4 / 菜单 {} / 角色 3 / 用户 3", MENU_SEED.size());
     }
@@ -338,6 +342,66 @@ public class DataInitializer implements CommandLineRunner {
         Wayline w = WaylineService.of(name, tpl, alt, speed, waypointsJson(points), remark);
         w.setCode(code);
         return w;
+    }
+
+    // ==================== 飞行架次演示数据(大屏飞行记录 / 航线管理) ====================
+
+    /** 架次种子 flightId 前缀:幂等判断用,与真机 flightId 区分 */
+    private static final String SEED_FLIGHT_PREFIX = "FSEED";
+
+    /** 近 6 日 10 个架次:成功 7 / 失败 2 / 取消 1(时长分钟 / 照片数 / 距今分钟) */
+    private void seedFlightData() {
+        if (waylineJobMapper.selectCount(Wrappers.<WaylineJob>lambdaQuery()
+                .likeRight(WaylineJob::getFlightId, SEED_FLIGHT_PREFIX)) > 0) {
+            return;
+        }
+        List<Wayline> lines = waylineMapper.selectList(Wrappers.<Wayline>lambdaQuery()
+                .orderByAsc(Wayline::getId));
+        if (lines.isEmpty()) {
+            return;
+        }
+        String today = java.time.LocalDate.now().toString().replace("-", "").substring(4);
+        String[][] plan = {
+                // 航线序号 / 状态 / 时长分钟 / 照片数 / 距今分钟
+                {"0", "SUCCESS", "16", "18", "80"},
+                {"1", "SUCCESS", "24", "26", "260"},
+                {"2", "SUCCESS", "15", "12", "950"},
+                {"0", "FAILED", "6", "0", "1500"},
+                {"1", "SUCCESS", "31", "34", "2200"},
+                {"2", "SUCCESS", "19", "15", "2900"},
+                {"0", "CANCELED", "0", "0", "3500"},
+                {"1", "SUCCESS", "27", "22", "4300"},
+                {"2", "FAILED", "4", "0", "5100"},
+                {"0", "SUCCESS", "22", "19", "6400"}};
+        int seq = 1;
+        for (String[] p : plan) {
+            Wayline w = lines.get(Integer.parseInt(p[0]));
+            WaylineJob j = new WaylineJob();
+            j.setFlightId(SEED_FLIGHT_PREFIX + today + "-" + seq++);
+            j.setDockSn("DOCK-SIM-0001");
+            j.setDroneSn("DRONE-SIM-0001");
+            j.setWaylineId(w.getId());
+            j.setWaylineName(w.getName());
+            j.setJobType(WaylineJob.JobType.IMMEDIATE);
+            j.setJobChannel(WaylineJob.JobChannel.FLIGHTTASK);
+            j.setRthAltitude(120);
+            WaylineJob.Status st = WaylineJob.Status.valueOf(p[1]);
+            j.setStatus(st);
+            LocalDateTime begin = LocalDateTime.now().minusMinutes(Long.parseLong(p[4]));
+            j.setDispatchedAt(begin.minusMinutes(3));
+            j.setBeginAt(begin);
+            int durationMin = Integer.parseInt(p[2]);
+            if (st != WaylineJob.Status.CANCELED) {
+                j.setEndAt(begin.plusMinutes(durationMin));
+            }
+            j.setProgress(st == WaylineJob.Status.SUCCESS ? 100 : (st == WaylineJob.Status.FAILED ? 38 : 0));
+            j.setMediaCount(Integer.parseInt(p[3]));
+            if (st == WaylineJob.Status.FAILED) {
+                j.setErrorMsg(seq % 2 == 0 ? "飞行器通信超时,已自动返航" : "电量低于安全阈值,任务中止");
+            }
+            waylineJobMapper.insert(j);
+        }
+        log.info("飞行架次演示数据写入完成:10 条");
     }
 
     /** 航点数组序列化:[{longitude,latitude,height,speed}] */
