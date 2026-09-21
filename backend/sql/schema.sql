@@ -823,3 +823,61 @@ CREATE TABLE IF NOT EXISTS ai_odor_reading (
 );
 COMMENT ON COLUMN ai_odor_reading.wind_direction IS '风向(度):风的来向,0=北,顺时针';
 CREATE INDEX IF NOT EXISTS idx_odor_reading_station ON ai_odor_reading (station_id, read_time DESC);
+
+-- ---------------- 电子围栏(作业区/禁飞区/限飞区,坐标为裸经纬度点串) ----------------
+CREATE TABLE IF NOT EXISTS geo_fence (
+    id           BIGSERIAL    PRIMARY KEY,
+    name         VARCHAR(64)  NOT NULL,
+    fence_type   VARCHAR(16)  NOT NULL DEFAULT 'WORK',
+    shape        VARCHAR(16)  NOT NULL DEFAULT 'POLYGON',
+    points_json  TEXT         NOT NULL,
+    radius       NUMERIC(10, 2),
+    max_altitude NUMERIC(8, 2),
+    enabled      BOOLEAN      NOT NULL DEFAULT TRUE,
+    remark       VARCHAR(255),
+    create_time  TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time  TIMESTAMP
+);
+COMMENT ON TABLE geo_fence IS '电子围栏:CIRCLE 存圆心+radius,POLYGON 存顶点串 [{lng,lat},..]';
+COMMENT ON COLUMN geo_fence.fence_type IS '类型:NO_FLY 禁飞 / LIMIT 限飞(含限高 max_altitude) / WORK 作业区';
+CREATE INDEX IF NOT EXISTS idx_geo_fence_enabled ON geo_fence (enabled);
+
+-- ---------------- 设备轨迹点(OSD 每帧追加,航迹回放用) ----------------
+CREATE TABLE IF NOT EXISTS device_track_point (
+    id          BIGSERIAL    PRIMARY KEY,
+    device_sn   VARCHAR(64)  NOT NULL,
+    ts          TIMESTAMP    NOT NULL,
+    longitude   NUMERIC(10, 6) NOT NULL,
+    latitude    NUMERIC(10, 6) NOT NULL,
+    height      NUMERIC(8, 2),
+    speed       NUMERIC(8, 2),
+    battery     INTEGER,
+    heading     NUMERIC(6, 2),
+    create_time TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time TIMESTAMP
+);
+-- 轨迹点只追加不更新:BaseEntity 仍带 update_time,存量表补列
+ALTER TABLE device_track_point ADD COLUMN IF NOT EXISTS update_time TIMESTAMP;
+CREATE INDEX IF NOT EXISTS idx_track_sn_ts ON device_track_point (device_sn, ts);
+
+-- ---------------- 飞行安全预警(规则引擎生成,处置闭环) ----------------
+CREATE TABLE IF NOT EXISTS safe_alert (
+    id            BIGSERIAL    PRIMARY KEY,
+    alert_type    VARCHAR(32)  NOT NULL,
+    level         VARCHAR(8)   NOT NULL DEFAULT 'WARN',
+    device_sn     VARCHAR(64)  NOT NULL,
+    title         VARCHAR(128) NOT NULL,
+    message       VARCHAR(512),
+    longitude     NUMERIC(10, 6),
+    latitude      NUMERIC(10, 6),
+    height        NUMERIC(8, 2),
+    occurred_at   TIMESTAMP    NOT NULL,
+    status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+    handler       VARCHAR(64),
+    handle_time   TIMESTAMP,
+    handle_remark VARCHAR(512),
+    create_time   TIMESTAMP    NOT NULL DEFAULT NOW(),
+    update_time   TIMESTAMP
+);
+COMMENT ON COLUMN safe_alert.alert_type IS 'FENCE_BREACH 围栏闯入 / PREDICTED_BREACH 预测闯入 / BATTERY_ANOMALY 电量骤降 / ALTITUDE_JUMP 高度突变 / SIGNAL_WEAK 信号弱';
+CREATE INDEX IF NOT EXISTS idx_safe_alert_time ON safe_alert (occurred_at DESC);
