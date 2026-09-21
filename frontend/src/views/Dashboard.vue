@@ -3,22 +3,21 @@
     <div class="page-header">
       <span class="page-title">工作台</span>
       <span class="header-tip">应急巡检 · 全域态势总览</span>
+      <div class="actions">
+        <span class="live-chip"><i class="live-dot" />{{ countdown }}s 后自动刷新</span>
+        <el-button size="small" :loading="loading" @click="loadStats">立即刷新</el-button>
+      </div>
     </div>
 
     <!-- 欢迎横幅:白→亮蓝渐变 + 快捷入口 -->
     <div class="banner fade-in-up">
-      <svg class="banner-deco" viewBox="0 0 300 120" fill="none">
-        <circle cx="250" cy="60" r="46" stroke="rgba(21,94,239,.14)" stroke-width="1.2" stroke-dasharray="3 5" />
-        <circle cx="250" cy="60" r="30" stroke="rgba(14,165,233,.22)" stroke-width="1.2" />
-        <circle cx="250" cy="60" r="15" stroke="rgba(21,94,239,.30)" stroke-width="1.4" />
-        <circle cx="250" cy="60" r="4" fill="#0ea5e9" opacity=".55" />
-        <path d="M150 100 A 60 60 0 0 1 195 18" stroke="rgba(14,165,233,.25)" stroke-width="1.4" />
-        <circle cx="195" cy="18" r="3" fill="#155eef" opacity=".5" />
-        <circle cx="178" cy="34" r="2.2" fill="#0ea5e9" opacity=".45" />
-      </svg>
       <div class="banner-main">
-        <div class="banner-hi">{{ greet }},{{ nickname }}<i class="banner-wave"></i></div>
-        <div class="banner-date">{{ dateText }} · 应急巡检 · 全域态势总览</div>
+        <div class="banner-hi">{{ greet }},{{ nickname }}</div>
+        <div class="banner-date">{{ dateText }} · 应急巡检全域态势,数据实时汇聚</div>
+      </div>
+      <div class="banner-live">
+        <i class="live-dot" />
+        <span>已实时刷新 {{ lastRefresh || '—' }}</span>
       </div>
       <div class="banner-actions">
         <div v-for="a in actions" :key="a.label" class="action-chip" @click="$router.push(a.to)">
@@ -28,19 +27,19 @@
       </div>
     </div>
 
-    <!-- 概览指标:渐变图标 + 数字 -->
+    <!-- 概览指标:数字滚动动画 -->
     <div class="tiles">
       <div v-for="t in tiles" :key="t.label" class="panel tile" :class="t.tone">
         <div class="tile-ico" v-html="t.icon"></div>
         <div class="tile-body">
           <div class="tile-label">{{ t.label }}</div>
-          <div class="tile-value glow-num">{{ t.value }}</div>
+          <div class="tile-value" :class="{ hot: t.alert && t.value > 0 }">{{ t.value }}</div>
           <div class="tile-sub">{{ t.sub }}</div>
         </div>
       </div>
     </div>
 
-    <!-- 分布图表:三列 -->
+    <!-- 分布图表:三列 ECharts,数据更新带过渡动画 -->
     <div class="charts">
       <div class="panel chart-panel">
         <div class="panel-title">点位风险等级分布</div>
@@ -161,9 +160,11 @@ import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import * as echarts from 'echarts/core'
 import { PieChart, BarChart, LineChart } from 'echarts/charts'
 import { TooltipComponent, LegendComponent, GridComponent, TitleComponent } from 'echarts/components'
+import { UniversalTransition } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
 
-echarts.use([PieChart, BarChart, LineChart, TooltipComponent, LegendComponent, GridComponent, TitleComponent, CanvasRenderer])
+echarts.use([PieChart, BarChart, LineChart, TooltipComponent, LegendComponent, GridComponent,
+  TitleComponent, UniversalTransition, CanvasRenderer])
 import http from '../api'
 import {
   RISK_LEVEL, TASK_STATUS, EVENT_LEVEL, EVENT_STATUS, HAZARD_LEVEL, HAZARD_STATUS,
@@ -172,6 +173,8 @@ import {
 
 const loading = ref(false)
 const stats = reactive({})
+const lastRefresh = ref('')
+const countdown = ref(30)
 
 /* ---------- 问候与日期 ---------- */
 const nickname = localStorage.getItem('nickname') || '指挥员'
@@ -218,15 +221,32 @@ const T = {
   chip: ico('<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3"/><circle cx="12" cy="12" r="1.6"/>')
 }
 
+/* 数字滚动:rAF 缓动,数据刷新时从旧值滚到新值 */
+const shown = reactive({})
+const rafs = {}
+function countUp(key, to) {
+  if (typeof to !== 'number') { shown[key] = to ?? 0; return }
+  const from = typeof shown[key] === 'number' ? shown[key] : 0
+  if (from === to) { shown[key] = to; return }
+  cancelAnimationFrame(rafs[key])
+  const t0 = performance.now(), dur = 700
+  const tick = (t) => {
+    const p = Math.min(1, (t - t0) / dur)
+    shown[key] = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3)))
+    if (p < 1) rafs[key] = requestAnimationFrame(tick)
+  }
+  rafs[key] = requestAnimationFrame(tick)
+}
+
 const tiles = computed(() => [
-  { label: '点位总数', value: stats.pointTotal ?? 0, sub: '覆盖全部风险等级', tone: 'tone-primary', icon: T.point },
-  { label: '启用计划', value: stats.planEnabled ?? 0, sub: '可按计划生成任务', tone: 'tone-cyan', icon: T.plan },
-  { label: '今日任务', value: stats.taskToday ?? 0, sub: `待执行 ${stats.taskPending ?? 0} · 执行中 ${stats.taskRunning ?? 0}`, tone: 'tone-primary', icon: T.taskOk },
-  { label: '逾期任务', value: stats.taskOverdue ?? 0, sub: '超过计划结束时间', tone: 'tone-danger', icon: T.clock },
-  { label: '待处理隐患', value: stats.hazardPending ?? 0, sub: `处理中 ${stats.hazardProcessing ?? 0}`, tone: 'tone-warning', icon: T.warn },
-  { label: '进行中事件', value: stats.eventActive ?? 0, sub: `累计事件 ${stats.eventTotal ?? 0}`, tone: 'tone-danger', icon: T.bolt },
-  { label: '机场在线', value: stats.dockOnline ?? 0, sub: `无人机在线 ${stats.droneOnline ?? 0}`, tone: 'tone-cyan', icon: T.dock },
-  { label: 'AI 告警今日', value: stats.alarmToday ?? 0, sub: '六类算法识别命中', tone: 'tone-purple', icon: T.chip }
+  { label: '点位总数', value: shown.pointTotal ?? 0, sub: '覆盖全部风险等级', tone: 'tone-primary', icon: T.point },
+  { label: '启用计划', value: shown.planEnabled ?? 0, sub: '可按计划生成任务', tone: 'tone-cyan', icon: T.plan },
+  { label: '今日任务', value: shown.taskToday ?? 0, sub: `待执行 ${stats.taskPending ?? 0} · 执行中 ${stats.taskRunning ?? 0}`, tone: 'tone-primary', icon: T.taskOk },
+  { label: '逾期任务', value: shown.taskOverdue ?? 0, sub: '超过计划结束时间', tone: 'tone-danger', icon: T.clock, alert: true },
+  { label: '待处理隐患', value: shown.hazardPending ?? 0, sub: `处理中 ${stats.hazardProcessing ?? 0}`, tone: 'tone-warning', icon: T.warn, alert: true },
+  { label: '进行中事件', value: shown.eventActive ?? 0, sub: `累计事件 ${stats.eventTotal ?? 0}`, tone: 'tone-danger', icon: T.bolt, alert: true },
+  { label: '机场在线', value: shown.dockOnline ?? 0, sub: `无人机在线 ${stats.droneOnline ?? 0}`, tone: 'tone-cyan', icon: T.dock },
+  { label: 'AI 告警今日', value: shown.alarmToday ?? 0, sub: '六类算法识别命中', tone: 'tone-purple', icon: T.chip }
 ])
 
 /* 与 el-tag 语义一致的图表配色,保证同屏同义同色 */
@@ -234,7 +254,15 @@ const RISK_COLOR = { LOW: '#98a2b3', MEDIUM: '#155eef', HIGH: '#f79009', EXTREME
 const TASK_COLOR = { PENDING: '#98a2b3', RUNNING: '#155eef', DONE: '#12b76a', OVERDUE: '#f04438', CANCELED: '#d4dde9' }
 const EVENT_COLOR = { I: '#f04438', II: '#f79009', III: '#155eef', IV: '#98a2b3' }
 
-/* ---------- ECharts:实例统一在 onUnmounted 释放,窗口尺寸变化时重绘 ---------- */
+/* ---------- ECharts:统一动画参数,数据更新时形态过渡 ---------- */
+const ANIM = {
+  animationDuration: 800,
+  animationEasing: 'cubicOut',
+  animationDurationUpdate: 700,
+  animationEasingUpdate: 'cubicInOut'
+}
+const AXIS_LABEL = { color: '#667085', fontSize: 11 }
+
 const riskRef = ref(null)
 const taskRef = ref(null)
 const eventRef = ref(null)
@@ -244,12 +272,12 @@ let taskChart = null
 let eventChart = null
 let trendChart = null
 
-/** 亮蓝纵向渐变柱:顶饱和 → 底 55% 透明,科技感主视觉 */
+/** 亮蓝纵向渐变柱:顶饱和 → 底半透明 */
 const barGradient = (hex) => {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16)
   return new echarts.graphic.LinearGradient(0, 0, 0, 1, [
     { offset: 0, color: hex },
-    { offset: 1, color: `rgba(${r},${g},${b},.5)` }
+    { offset: 1, color: `rgba(${r},${g},${b},.45)` }
   ])
 }
 
@@ -260,18 +288,20 @@ function renderRisk() {
   }))
   const total = data.reduce((s, d) => s + d.value, 0)
   riskChart?.setOption({
+    ...ANIM,
     title: {
       text: String(total), subtext: '点位总数', left: 'center', top: '34%',
-      textStyle: { fontSize: 26, fontWeight: 700, color: '#101828' },
+      textStyle: { fontSize: 25, fontWeight: 700, color: '#101828' },
       subtextStyle: { fontSize: 11.5, color: '#98a2b3' }
     },
     tooltip: { trigger: 'item', formatter: '{b}: {c} 个 ({d}%)' },
-    legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8 },
+    legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: AXIS_LABEL },
     series: [{
-      type: 'pie', radius: ['52%', '72%'], center: ['50%', '44%'],
-      avoidLabelOverlap: true,
-      itemStyle: { borderColor: '#fff', borderWidth: 2 },
-      label: { formatter: '{b} {c}' },
+      type: 'pie', radius: ['55%', '74%'], center: ['50%', '43%'],
+      avoidLabelOverlap: true, universalTransition: true,
+      itemStyle: { borderColor: '#fff', borderWidth: 2, borderRadius: 5 },
+      label: { formatter: '{b} {c}', fontSize: 11.5, color: '#475467' },
+      labelLine: { length: 12, length2: 8, lineStyle: { color: '#cdd5e1' } },
       data
     }]
   })
@@ -280,13 +310,21 @@ function renderRisk() {
 function renderTask() {
   const entries = Object.entries(stats.taskByStatus || {})
   taskChart?.setOption({
+    ...ANIM,
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 12, right: 16, top: 24, bottom: 8, containLabel: true },
-    xAxis: { type: 'category', data: entries.map(([k]) => dictLabel(TASK_STATUS, k)), axisTick: { show: false } },
-    yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#eef2f7' } } },
+    grid: { left: 10, right: 14, top: 26, bottom: 6, containLabel: true },
+    xAxis: {
+      type: 'category', data: entries.map(([k]) => dictLabel(TASK_STATUS, k)),
+      axisTick: { show: false }, axisLine: { lineStyle: { color: '#e4e9f2' } }, axisLabel: AXIS_LABEL
+    },
+    yAxis: {
+      type: 'value', minInterval: 1,
+      splitLine: { lineStyle: { color: '#f0f3f8' } }, axisLabel: AXIS_LABEL
+    },
     series: [{
-      type: 'bar', barWidth: 24,
+      type: 'bar', barWidth: 26,
       itemStyle: { borderRadius: [7, 7, 0, 0] },
+      animationDelay: (i) => i * 90,
       data: entries.map(([k, v]) => ({ value: v, itemStyle: { color: barGradient(TASK_COLOR[k] || '#98a2b3') } }))
     }]
   })
@@ -295,17 +333,23 @@ function renderTask() {
 function renderEvent() {
   const entries = Object.entries(stats.eventByLevel || {})
   eventChart?.setOption({
+    ...ANIM,
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 12, right: 16, top: 24, bottom: 8, containLabel: true },
+    grid: { left: 10, right: 14, top: 26, bottom: 6, containLabel: true },
     xAxis: {
       type: 'category',
       data: entries.map(([k]) => dictLabel(EVENT_LEVEL, k).replace('级 ', '\n')),
-      axisTick: { show: false }, axisLabel: { fontSize: 10.5, lineHeight: 14 }
+      axisTick: { show: false }, axisLine: { lineStyle: { color: '#e4e9f2' } },
+      axisLabel: { ...AXIS_LABEL, lineHeight: 14 }
     },
-    yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#eef2f7' } } },
+    yAxis: {
+      type: 'value', minInterval: 1,
+      splitLine: { lineStyle: { color: '#f0f3f8' } }, axisLabel: AXIS_LABEL
+    },
     series: [{
-      type: 'bar', barWidth: 24,
+      type: 'bar', barWidth: 26,
       itemStyle: { borderRadius: [7, 7, 0, 0] },
+      animationDelay: (i) => i * 90,
       data: entries.map(([k, v]) => ({ value: v, itemStyle: { color: barGradient(EVENT_COLOR[k] || '#98a2b3') } }))
     }]
   })
@@ -314,30 +358,45 @@ function renderEvent() {
 function renderTrend() {
   const trend = stats.taskTrend || []
   trendChart?.setOption({
+    ...ANIM,
+    animationDuration: 1100,
     tooltip: { trigger: 'axis' },
-    legend: { right: 8, top: 0, icon: 'circle', itemWidth: 8, itemHeight: 8 },
-    grid: { left: 12, right: 20, top: 34, bottom: 8, containLabel: true },
+    legend: { right: 8, top: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: AXIS_LABEL },
+    grid: { left: 10, right: 20, top: 34, bottom: 8, containLabel: true },
     xAxis: {
       type: 'category', boundaryGap: false, axisTick: { show: false },
+      axisLine: { lineStyle: { color: '#e4e9f2' } }, axisLabel: AXIS_LABEL,
       // 后端给 yyyy-MM-dd,图表轴只保留 MM-dd
       data: trend.map((d) => String(d.date).slice(5))
     },
-    yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#eef2f7' } } },
+    yAxis: {
+      type: 'value', minInterval: 1,
+      splitLine: { lineStyle: { color: '#f0f3f8' } }, axisLabel: AXIS_LABEL
+    },
     series: [
-      { name: '计划任务', type: 'line', smooth: true, symbolSize: 7,
+      { name: '计划任务', type: 'line', smooth: true, symbolSize: 6,
         symbol: 'circle', itemStyle: { color: '#155eef', borderColor: '#fff', borderWidth: 1.5 },
         lineStyle: { width: 2.5, color: '#155eef' },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(21,94,239,.18)' }, { offset: 1, color: 'rgba(21,94,239,0)' }]) },
+          { offset: 0, color: 'rgba(21,94,239,.16)' }, { offset: 1, color: 'rgba(21,94,239,0)' }]) },
+        animationDelay: 150,
         data: trend.map((d) => d.total) },
-      { name: '已完成', type: 'line', smooth: true, symbolSize: 7,
+      { name: '已完成', type: 'line', smooth: true, symbolSize: 6,
         symbol: 'circle', itemStyle: { color: '#12b76a', borderColor: '#fff', borderWidth: 1.5 },
         lineStyle: { width: 2.5, color: '#12b76a' },
         areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(18,183,106,.14)' }, { offset: 1, color: 'rgba(18,183,106,0)' }]) },
+          { offset: 0, color: 'rgba(18,183,106,.12)' }, { offset: 1, color: 'rgba(18,183,106,0)' }]) },
+        animationDelay: 300,
         data: trend.map((d) => d.done) }
     ]
   })
+}
+
+function renderAll() {
+  renderRisk()
+  renderTask()
+  renderEvent()
+  renderTrend()
 }
 
 function resize() {
@@ -347,11 +406,23 @@ function resize() {
   trendChart?.resize()
 }
 
-onMounted(async () => {
+/* ---------- 数据加载 + 30s 自动刷新(页面隐藏时暂停) ---------- */
+async function loadStats() {
   loading.value = true
   try {
     Object.assign(stats, await http.get('/dashboard/stats'))
+    lastRefresh.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    // 指标数字滚动到新值
+    ;['pointTotal', 'planEnabled', 'taskToday', 'taskOverdue', 'hazardPending',
+      'eventActive', 'dockOnline', 'alarmToday'].forEach((k) => countUp(k, stats[k] ?? 0))
+    await nextTick()
+    renderAll()
   } finally { loading.value = false }
+}
+
+let cdTimer = null
+
+onMounted(async () => {
   await nextTick()
   // 加载期间组件可能已被卸载(快速切走路由),refs 为空时直接放弃初始化
   if (!riskRef.value || !taskRef.value || !eventRef.value || !trendRef.value) return
@@ -359,15 +430,31 @@ onMounted(async () => {
   taskChart = echarts.init(taskRef.value)
   eventChart = echarts.init(eventRef.value)
   trendChart = echarts.init(trendRef.value)
-  renderRisk()
-  renderTask()
-  renderEvent()
-  renderTrend()
+  await loadStats()
   window.addEventListener('resize', resize)
+  // 倒计时展示 + 到点刷新(标签页不可见时跳过本轮,回前台立即补一次)
+  cdTimer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) {
+      countdown.value = 30
+      if (!document.hidden) loadStats()
+    }
+  }, 1000)
+  document.addEventListener('visibilitychange', onVisible)
 })
+
+function onVisible() {
+  if (!document.hidden && lastRefresh.value) {
+    countdown.value = 30
+    loadStats()
+  }
+}
 
 onUnmounted(() => {
   window.removeEventListener('resize', resize)
+  document.removeEventListener('visibilitychange', onVisible)
+  clearInterval(cdTimer)
+  Object.values(rafs).forEach((id) => cancelAnimationFrame(id))
   riskChart?.dispose()
   taskChart?.dispose()
   eventChart?.dispose()
@@ -379,43 +466,49 @@ onUnmounted(() => {
 .dashboard { padding-bottom: 26px; }
 .header-tip { font-size: 13px; color: var(--text-dim); }
 
-/* ---------------- 欢迎横幅:白 → 亮蓝渐变 ---------------- */
+/* 实时刷新提示 */
+.live-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-dim);
+  padding: 0 4px;
+}
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #12b76a; flex-shrink: 0;
+  animation: live-pulse 2s ease-out infinite;
+}
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(18, 183, 106, .45); }
+  70% { box-shadow: 0 0 0 7px rgba(18, 183, 106, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(18, 183, 106, 0); }
+}
+
+/* ---------------- 欢迎横幅:白 → 亮蓝渐变,克制留白 ---------------- */
 .banner {
   position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between; gap: 18px;
-  padding: 20px 26px; border-radius: 14px;
-  background: linear-gradient(135deg, #ffffff 0%, #eff6ff 46%, #dbeafe 100%);
-  border: 1px solid #c9dcf8;
-  box-shadow: 0 10px 30px -14px rgba(21, 94, 239, 0.25);
+  display: flex; align-items: center; gap: 18px;
+  padding: 20px 26px; border-radius: 12px;
+  background: linear-gradient(115deg, #ffffff 0%, #f3f8ff 55%, #eaf3ff 100%);
+  border: 1px solid #d9e7fb;
 }
 .banner::after {
   content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
   background: linear-gradient(90deg, #155eef, #0ea5e9 55%, rgba(14, 165, 233, 0));
 }
-.banner-deco { position: absolute; right: 210px; top: 0; height: 100%; pointer-events: none; }
 .banner-main { min-width: 0; }
 .banner-hi {
-  display: flex; align-items: center; gap: 10px;
   font-size: 21px; font-weight: 800; letter-spacing: 1px; color: #0b2447;
 }
-.banner-wave {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: linear-gradient(135deg, #155eef, #0ea5e9);
-  box-shadow: 0 0 10px rgba(21, 94, 239, 0.45);
-  position: relative;
-}
-.banner-wave::before, .banner-wave::after {
-  content: ''; position: absolute; border-radius: 50%; border: 2px solid #fff;
-}
-.banner-wave::before { inset: 4px 7px auto; height: 8px; width: 8px; }
-.banner-wave::after { left: 3px; right: 3px; top: 12px; height: 3px; }
 .banner-date { margin-top: 6px; font-size: 12.5px; color: #5b7ba6; letter-spacing: 1px; }
+.banner-live {
+  margin-left: auto; display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: #5b7ba6; white-space: nowrap;
+}
 .banner-actions { display: flex; gap: 10px; flex-shrink: 0; z-index: 1; }
 .action-chip {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 16px; border-radius: 999px; cursor: pointer;
-  background: rgba(255, 255, 255, 0.82); backdrop-filter: blur(6px);
-  border: 1px solid rgba(21, 94, 239, 0.22);
+  background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(6px);
+  border: 1px solid rgba(21, 94, 239, 0.2);
   font-size: 13px; font-weight: 600; color: #17325c;
   transition: all 0.2s;
 }
@@ -426,39 +519,34 @@ onUnmounted(() => {
 .action-ico { width: 17px; height: 17px; display: inline-flex; }
 .action-ico :deep(svg) { width: 100%; height: 100%; color: var(--primary); }
 
-/* ---------------- 指标卡 ---------------- */
+/* ---------------- 指标卡:去色条,浅底色图标 ---------------- */
 .tiles {
   display: grid; grid-template-columns: repeat(8, 1fr); gap: 12px; margin-top: 12px;
 }
 .tile {
-  display: flex; align-items: flex-start; gap: 11px;
-  padding: 14px 14px 12px; overflow: hidden;
-  border-top: none; transition: transform 0.2s, box-shadow 0.2s;
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 15px 14px 13px; overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
-.tile::before {
-  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px;
-  background: linear-gradient(90deg, var(--primary), var(--primary-2));
-}
-.tile.tone-cyan::before { background: linear-gradient(90deg, #0ea5e9, #22d3ee); }
-.tile.tone-warning::before { background: linear-gradient(90deg, #f79009, #fdb022); }
-.tile.tone-danger::before { background: linear-gradient(90deg, #f04438, #f97066); }
-.tile.tone-purple::before { background: linear-gradient(90deg, #7c3aed, #a78bfa); }
-.tile:hover { transform: translateY(-3px); box-shadow: 0 14px 30px -12px rgba(21, 94, 239, 0.3); }
+.tile:hover { transform: translateY(-3px); box-shadow: 0 14px 30px -12px rgba(21, 94, 239, 0.28); }
 .tile-ico {
-  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #155eef, #0ea5e9);
-  box-shadow: 0 6px 14px -6px rgba(21, 94, 239, 0.55);
-  transition: box-shadow 0.2s;
+  background: #eff6ff; color: #155eef;
 }
-.tile.tone-warning .tile-ico { background: linear-gradient(135deg, #f79009, #fbbf24); box-shadow: 0 6px 14px -6px rgba(247, 144, 9, 0.5); }
-.tile.tone-danger .tile-ico { background: linear-gradient(135deg, #f04438, #f97066); box-shadow: 0 6px 14px -6px rgba(240, 68, 56, 0.5); }
-.tile.tone-purple .tile-ico { background: linear-gradient(135deg, #7c3aed, #a78bfa); box-shadow: 0 6px 14px -6px rgba(124, 58, 237, 0.5); }
-.tile:hover .tile-ico { box-shadow: 0 8px 20px -6px rgba(21, 94, 239, 0.7); }
-.tile-ico :deep(svg) { width: 22px; height: 22px; color: #fff; }
+.tile.tone-cyan .tile-ico { background: #e8f8fd; color: #0e9fbd; }
+.tile.tone-warning .tile-ico { background: #fef4e6; color: #e08700; }
+.tile.tone-danger .tile-ico { background: #feefec; color: #e0493a; }
+.tile.tone-purple .tile-ico { background: #f3efff; color: #7c3aed; }
+.tile-ico :deep(svg) { width: 21px; height: 21px; }
 .tile-body { min-width: 0; }
 .tile-label { font-size: 12.5px; color: var(--text-dim); white-space: nowrap; }
-.tile-value { font-size: 26px; line-height: 1.3; margin: 1px 0 2px; }
+.tile-value {
+  font-size: 27px; font-weight: 700; color: #101828; line-height: 1.3;
+  margin: 1px 0 2px; font-variant-numeric: tabular-nums;
+}
+/* 需要关注的指标(逾期/隐患/事件)非零时数字转红 */
+.tile-value.hot { color: #f04438; }
 .tile-sub {
   font-size: 11px; color: var(--text-faint);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -488,7 +576,7 @@ onUnmounted(() => {
   padding: 9px 10px; margin-bottom: 6px; border-radius: 9px;
   border: 1px solid var(--border); cursor: pointer; transition: all .15s;
 }
-.item:hover { border-color: #b8ccf7; background: #f7faff; transform: translateX(2px); }
+.item:hover { border-color: #b8ccf7; background: #f7faff; }
 .item-main { min-width: 0; }
 .item-tags { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
 .item-title {
@@ -506,7 +594,7 @@ onUnmounted(() => {
 }
 @media (max-width: 1000px) {
   .charts { grid-template-columns: 1fr; }
-  .banner { flex-direction: column; align-items: flex-start; }
-  .banner-deco { display: none; }
+  .banner { flex-wrap: wrap; }
+  .banner-live { margin-left: 0; }
 }
 </style>
