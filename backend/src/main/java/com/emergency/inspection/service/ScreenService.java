@@ -8,6 +8,7 @@ import com.emergency.inspection.entity.InspectIssue;
 import com.emergency.inspection.entity.InspectPoint;
 import com.emergency.inspection.entity.InspectTask;
 import com.emergency.inspection.entity.Pilot;
+import com.emergency.inspection.entity.SafeAlert;
 import com.emergency.inspection.entity.VideoChannel;
 import com.emergency.inspection.entity.WorkOrder;
 import com.emergency.inspection.mapper.DeviceMapper;
@@ -17,6 +18,7 @@ import com.emergency.inspection.mapper.InspectIssueMapper;
 import com.emergency.inspection.mapper.InspectPointMapper;
 import com.emergency.inspection.mapper.InspectTaskMapper;
 import com.emergency.inspection.mapper.PilotMapper;
+import com.emergency.inspection.mapper.SafeAlertMapper;
 import com.emergency.inspection.mapper.VideoChannelMapper;
 import com.emergency.inspection.mapper.WorkOrderMapper;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +51,7 @@ public class ScreenService {
     private final PilotMapper pilotMapper;
     private final VideoChannelMapper channelMapper;
     private final HazardMapper hazardMapper;
+    private final SafeAlertMapper safeAlertMapper;
 
     public Map<String, Object> overview() {
         Map<String, Object> data = new LinkedHashMap<>();
@@ -63,6 +66,10 @@ public class ScreenService {
         data.put("orderByDept", orderByDept());
         data.put("recentIssues", recentIssues(12));
         data.put("recentOrders", recentOrders(10));
+        data.put("safeAlertPending", safeAlertMapper.selectCount(
+                Wrappers.<SafeAlert>lambdaQuery().eq(SafeAlert::getStatus, SafeAlert.Status.PENDING)));
+        data.put("recentSafeAlerts", safeAlertMapper.selectList(
+                Wrappers.<SafeAlert>lambdaQuery().orderByDesc(SafeAlert::getOccurredAt).last("limit 8")));
         data.put("onlineVideos", onlineVideos(6));
         data.put("mapPoints", mapPoints());
         data.put("taskTrend", taskTrend());

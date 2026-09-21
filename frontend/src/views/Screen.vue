@@ -44,6 +44,28 @@
           </div>
         </div>
 
+        <div class="panel alert-panel">
+          <div class="panel-hd">
+            飞行安全预警
+            <span class="hd-note">{{ safeAlertPending }} 条待处理</span>
+          </div>
+          <div class="scroll">
+            <div v-for="a in recentSafeAlerts" :key="a.id" class="alert-row">
+              <div class="al-main">
+                <span class="al-title">
+                  <i class="al-dot" :class="a.level === 'ERROR' ? 'err' : 'warn'" />
+                  {{ a.title }}
+                </span>
+                <span class="al-sub">{{ a.deviceSn }} · {{ (a.occurredAt || '').slice(5, 16).replace('T', ' ') }}</span>
+              </div>
+              <el-tag size="small" :type="dictTag(SAFE_ALERT_STATUS, a.status)" effect="dark">
+                {{ dictLabel(SAFE_ALERT_STATUS, a.status) }}
+              </el-tag>
+            </div>
+            <div v-if="!recentSafeAlerts.length" class="empty">暂无飞行安全预警</div>
+          </div>
+        </div>
+
         <div class="panel">
           <div class="panel-hd">工单部门排行</div>
           <div class="rank">
@@ -187,7 +209,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import http from '../api'
-import { TASK_STATUS, ISSUE_TYPE, ISSUE_STATUS, dictLabel, dictTag } from '../utils/dict'
+import { TASK_STATUS, ISSUE_TYPE, ISSUE_STATUS, SAFE_ALERT_STATUS, dictLabel, dictTag } from '../utils/dict'
 
 const loading = ref(false)
 const data = ref({})
@@ -204,6 +226,8 @@ const device = computed(() => data.value.device || {})
 const issueByType = computed(() => data.value.issueByType || [])
 const orderByDept = computed(() => data.value.orderByDept || [])
 const recentIssues = computed(() => data.value.recentIssues || [])
+const recentSafeAlerts = computed(() => data.value.recentSafeAlerts || [])
+const safeAlertPending = computed(() => data.value.safeAlertPending ?? 0)
 const onlineVideos = computed(() => data.value.onlineVideos || [])
 const mapPoints = computed(() => data.value.mapPoints || [])
 
@@ -487,6 +511,24 @@ onUnmounted(() => {
 .is-main { min-width: 0; }
 .is-title { display: block; font-size: 12.5px; color: #e0f2fe; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .is-sub { display: block; font-size: 11px; color: var(--scr-dim); margin-top: 2px; }
+
+/* 飞行安全预警:固定高度面板,超量滚动 */
+.alert-panel { flex: 0 0 auto; max-height: 200px; display: flex; flex-direction: column; }
+.alert-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 8px; margin-bottom: 5px; border-radius: 6px;
+  background: rgba(56, 189, 248, .05);
+  border-left: 2px solid rgba(248, 113, 113, .7);
+}
+.al-main { min-width: 0; }
+.al-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: #e0f2fe; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.al-sub { display: block; font-size: 11px; color: var(--scr-dim); margin-top: 2px; }
+.al-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; }
+.al-dot.err { background: #f87171; box-shadow: 0 0 6px #f87171; }
+.al-dot.warn { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
 
 .video-box { padding: 0 12px 4px; }
 .video-frame {

@@ -50,6 +50,18 @@ dji:
     timeout-seconds: 15       # 指令下发后等待 services_reply 的超时
     history-keep: 2000        # 指令记录保留条数
 
+# 飞行安全预警规则阈值(围栏闯入/预测闯入/电量骤降/高度突变)
+safe-alert:
+  predict-horizon-seconds: 60   # 轨迹外推时长
+  predict-steps: 8              # 外推步数
+  predict-cooldown-ms: 300000   # 预测预警冷却
+  breach-cooldown-ms: 300000    # 实时闯入预警冷却
+  battery-window-seconds: 300   # 电量观察窗口
+  battery-drop-percent: 15      # 窗口内掉电百分比阈值
+  battery-cooldown-ms: 600000
+  altitude-jump-meters: 40      # 相邻遥测高度跳变阈值
+  altitude-cooldown-ms: 300000
+
 logging:
   level:
     com.emergency: info

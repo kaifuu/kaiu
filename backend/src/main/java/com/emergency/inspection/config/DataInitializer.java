@@ -6,6 +6,8 @@ import com.emergency.inspection.entity.AiAlgorithmAlarm;
 import com.emergency.inspection.entity.AiOdorStation;
 import com.emergency.inspection.entity.EmergencyEvent;
 import com.emergency.inspection.entity.Firmware;
+import com.emergency.inspection.entity.GeoFence;
+import com.emergency.inspection.entity.SafeAlert;
 import com.emergency.inspection.entity.InspectDemand;
 import com.emergency.inspection.entity.InspectIssue;
 import com.emergency.inspection.entity.Pilot;
@@ -40,6 +42,8 @@ import com.emergency.inspection.mapper.SysUserMapper;
 import com.emergency.inspection.mapper.AiAlgorithmAlarmMapper;
 import com.emergency.inspection.mapper.AiAlgorithmMapper;
 import com.emergency.inspection.mapper.AiOdorStationMapper;
+import com.emergency.inspection.mapper.GeoFenceMapper;
+import com.emergency.inspection.mapper.SafeAlertMapper;
 import com.emergency.inspection.mapper.WaylineMapper;
 import com.emergency.inspection.service.WaylineService;
 import lombok.RequiredArgsConstructor;
@@ -86,6 +90,8 @@ public class DataInitializer implements CommandLineRunner {
     private final AiAlgorithmMapper algorithmMapper;
     private final AiAlgorithmAlarmMapper algoAlarmMapper;
     private final AiOdorStationMapper odorStationMapper;
+    private final GeoFenceMapper fenceMapper;
+    private final SafeAlertMapper safeAlertMapper;
 
     /** 目标菜单布局(BIZ 业务菜单 / SYS 系统管理),path 为唯一键 */
     private static final List<SysMenu> MENU_SEED = List.of(
@@ -95,6 +101,8 @@ public class DataInitializer implements CommandLineRunner {
             new SysMenu("巡检任务", "/tasks", "List", SysMenu.Group.BIZ, 4),
             new SysMenu("隐患上报", "/hazards", "Warning", SysMenu.Group.BIZ, 5),
             new SysMenu("应急事件", "/events", "Bell", SysMenu.Group.BIZ, 6),
+            new SysMenu("电子围栏", "/fences", "Grid", SysMenu.Group.BIZ, 7),
+            new SysMenu("安全预警", "/safe-alerts", "AlarmClock", SysMenu.Group.BIZ, 7),
             new SysMenu("机场管理", "/docks", "OfficeBuilding", SysMenu.Group.BIZ, 7),
             new SysMenu("无人机管理", "/drones", "Promotion", SysMenu.Group.BIZ, 8),
             new SysMenu("服务大屏", "/screen", "DataBoard", SysMenu.Group.BIZ, 9),
@@ -121,6 +129,7 @@ public class DataInitializer implements CommandLineRunner {
             seedServiceData();
             seedDockExtData();
             seedAlgorithmData();
+            seedFenceData();
             return;
         }
         log.info("首次启动,写入演示数据 ...");
@@ -133,6 +142,7 @@ public class DataInitializer implements CommandLineRunner {
         seedServiceData();
         seedDockExtData();
         seedAlgorithmData();
+        seedFenceData();
 
         log.info("演示数据写入完成:租户 1 / 组织 4 / 菜单 {} / 角色 3 / 用户 3", MENU_SEED.size());
     }
@@ -355,6 +365,80 @@ public class DataInitializer implements CommandLineRunner {
         f.setFileUrl("http://oss.local/firmware/" + fileName);
         f.setRemark(remark);
         return f;
+    }
+
+    // ==================== 电子围栏 + 安全预警演示数据 ====================
+
+    /** 围栏围绕模拟器机场基地布设:作业区覆盖基地,禁飞圆在东北方向,飞行漂移约 1 分钟后触发预测/闯入预警 */
+    private void seedFenceData() {
+        if (fenceMapper.selectCount(Wrappers.<GeoFence>lambdaQuery()) == 0) {
+            GeoFence work = new GeoFence();
+            work.setName("机场基地作业区");
+            work.setFenceType(GeoFence.FenceType.WORK);
+            work.setShape(GeoFence.Shape.POLYGON);
+            work.setPointsJson("[{\"lng\":116.394500,\"lat\":39.907200},{\"lng\":116.400500,\"lat\":39.907200},"
+                    + "{\"lng\":116.400500,\"lat\":39.911200},{\"lng\":116.394500,\"lat\":39.911200}]");
+            work.setEnabled(true);
+            work.setRemark("巡检机场起降与保障作业区,涵盖机库、充电与备件区");
+            fenceMapper.insert(work);
+
+            GeoFence noFly = new GeoFence();
+            noFly.setName("东北高压走廊禁飞区");
+            noFly.setFenceType(GeoFence.FenceType.NO_FLY);
+            noFly.setShape(GeoFence.Shape.CIRCLE);
+            noFly.setPointsJson("[{\"lng\":116.401000,\"lat\":39.911000}]");
+            noFly.setRadius(new BigDecimal("200"));
+            noFly.setEnabled(true);
+            noFly.setRemark("高压输电走廊上空,无人机禁止进入");
+            fenceMapper.insert(noFly);
+
+            GeoFence limit = new GeoFence();
+            limit.setName("城区限飞区");
+            limit.setFenceType(GeoFence.FenceType.LIMIT);
+            limit.setShape(GeoFence.Shape.CIRCLE);
+            limit.setPointsJson("[{\"lng\":116.393000,\"lat\":39.907000}]");
+            limit.setRadius(new BigDecimal("800"));
+            limit.setMaxAltitude(new BigDecimal("120"));
+            limit.setEnabled(true);
+            limit.setRemark("城区空域,飞行高度不得超过 120 米");
+            fenceMapper.insert(limit);
+            log.info("电子围栏演示数据写入完成:3 条");
+        }
+        if (safeAlertMapper.selectCount(Wrappers.<SafeAlert>lambdaQuery()) == 0) {
+            LocalDateTime now = LocalDateTime.now();
+            safeAlertMapper.insert(safeAlert(SafeAlert.AlertType.BATTERY_ANOMALY, SafeAlert.Level.WARN,
+                    "DRONE-SIM-0001", "电量骤降预警", "5 分钟内电量下降 17%(当前 41%),超出正常巡检消耗速率",
+                    "116.398100", "39.909800", 88, now.minusHours(5), true, "系统管理员",
+                    "换电后复飞,确认为低温电池性能衰减", now.minusHours(4)));
+            safeAlertMapper.insert(safeAlert(SafeAlert.AlertType.ALTITUDE_JUMP, SafeAlert.Level.WARN,
+                    "DRONE-SIM-0001", "高度突变预警", "相邻遥测高度跳变 46 米(92 → 138),疑似气压计异常或强上升气流",
+                    "116.397600", "39.909400", 138, now.minusHours(2), false, null, null, null));
+            safeAlertMapper.insert(safeAlert(SafeAlert.AlertType.PREDICTED_BREACH, SafeAlert.Level.ERROR,
+                    "DRONE-SIM-0001", "预测闯入禁飞区", "按当前航速外推 60 秒后将进入「东北高压走廊禁飞区」,建议立即调整航向",
+                    "116.399200", "39.910200", 96, now.minusMinutes(40), false, null, null, null));
+            log.info("安全预警历史样例写入完成:3 条");
+        }
+    }
+
+    private SafeAlert safeAlert(SafeAlert.AlertType type, SafeAlert.Level level, String sn, String title,
+                                String message, String lng, String lat, double height,
+                                LocalDateTime occurredAt, boolean handled, String handler,
+                                String handleRemark, LocalDateTime handleTime) {
+        SafeAlert a = new SafeAlert();
+        a.setAlertType(type);
+        a.setLevel(level);
+        a.setDeviceSn(sn);
+        a.setTitle(title);
+        a.setMessage(message);
+        a.setLongitude(new BigDecimal(lng));
+        a.setLatitude(new BigDecimal(lat));
+        a.setHeight(BigDecimal.valueOf(height));
+        a.setOccurredAt(occurredAt);
+        a.setStatus(handled ? SafeAlert.Status.HANDLED : SafeAlert.Status.PENDING);
+        a.setHandler(handler);
+        a.setHandleRemark(handleRemark);
+        a.setHandleTime(handleTime);
+        return a;
     }
 
     // ==================== 算法管理演示数据(算法注册 / 臭气站点 / 历史告警) ====================

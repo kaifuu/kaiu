@@ -286,6 +286,37 @@ export const ALGO_STATUS = {
   HANDLED: { label: '已处置', tagType: 'success' }
 }
 
+/* ---------------- 电子围栏 ---------------- */
+export const FENCE_TYPE = {
+  NO_FLY: { label: '禁飞区', tagType: 'danger' },
+  LIMIT: { label: '限飞区', tagType: 'warning' },
+  WORK: { label: '作业区', tagType: 'primary' }
+}
+
+export const FENCE_SHAPE = {
+  CIRCLE: { label: '圆形', tagType: 'primary' },
+  POLYGON: { label: '多边形', tagType: 'success' }
+}
+
+/* ---------------- 飞行安全预警 ---------------- */
+export const SAFE_ALERT_TYPE = {
+  FENCE_BREACH: { label: '闯入禁飞区', tagType: 'danger' },
+  PREDICTED_BREACH: { label: '预测闯入', tagType: 'warning' },
+  BATTERY_ANOMALY: { label: '电量骤降', tagType: 'warning' },
+  ALTITUDE_JUMP: { label: '高度突变', tagType: 'primary' },
+  SIGNAL_WEAK: { label: '信号弱', tagType: 'info' }
+}
+
+export const SAFE_ALERT_LEVEL = {
+  WARN: { label: '警告', tagType: 'warning' },
+  ERROR: { label: '严重', tagType: 'danger' }
+}
+
+export const SAFE_ALERT_STATUS = {
+  PENDING: { label: '待处理', tagType: 'danger' },
+  HANDLED: { label: '已处置', tagType: 'success' }
+}
+
 /* ---------------- 巡检服务(问题 / 工单 / 需求 / 飞手 / 视频) ---------------- */
 export const ISSUE_TYPE = {
   ILLEGAL_BUILD: { label: '疑似违建', tagType: 'danger' },
