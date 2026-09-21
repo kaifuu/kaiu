@@ -1,0 +1,254 @@
+/*
+ * 大屏子屏公共样式:深色指挥中心主题(变量定义在 Screen.vue 壳的 .screen 上,子屏继承)。
+ * 全局注册但全部走 scr-/panel- 体系前缀,不污染后台亮色页面。
+ */
+
+/* ===== 面板:毛玻璃 + 四角刻度 ===== */
+.scr-panel {
+  position: relative;
+  background: var(--scr-panel);
+  border: 1px solid var(--scr-border);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  padding-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.scr-panel.grow { flex: 1; }
+
+.scr-panel::before,
+.scr-panel::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(56, 189, 248, .6);
+  pointer-events: none;
+}
+.scr-panel::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.scr-panel::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+.panel-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #e0f2fe;
+  flex-shrink: 0;
+}
+.panel-hd::before {
+  content: '';
+  width: 3px;
+  height: 13px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--scr-cyan, #38bdf8), #2563eb);
+}
+.hd-note { margin-left: auto; font-size: 11.5px; font-weight: 400; color: var(--scr-dim, #7fa8d6); letter-spacing: 0; }
+
+.scroll { flex: 1; overflow-y: auto; padding: 0 10px 4px; min-height: 0; }
+.scroll::-webkit-scrollbar { width: 4px; }
+.scroll::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, .35); border-radius: 2px; }
+.empty { padding: 26px 0; text-align: center; font-size: 12.5px; color: var(--scr-dim, #7fa8d6); }
+
+/* ===== KPI 数字条:子屏顶部横排 ===== */
+.scr-kpi-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.scr-kpi {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--scr-panel);
+  border: 1px solid var(--scr-border);
+  position: relative;
+  overflow: hidden;
+}
+.scr-kpi::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--kpi-line, linear-gradient(180deg, #38bdf8, #2563eb));
+}
+.scr-kpi .ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(56, 189, 248, .12);
+  border: 1px solid rgba(56, 189, 248, .22);
+}
+.scr-kpi .ico svg { width: 18px; height: 18px; }
+.scr-kpi .body { min-width: 0; }
+.scr-kpi .label { font-size: 11.5px; color: var(--scr-dim, #7fa8d6); white-space: nowrap; }
+.scr-kpi .value {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.15;
+  color: #e0f2fe;
+  font-variant-numeric: tabular-nums;
+}
+.scr-kpi .value.small { font-size: 17px; }
+.scr-kpi .value.cyan { color: #7dd3fc; }
+.scr-kpi .value.good { color: #34d399; }
+.scr-kpi .value.warn { color: #fbbf24; }
+.scr-kpi .value.bad { color: #f87171; }
+
+/* ===== 通用列表行 ===== */
+.scr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  margin-bottom: 5px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, .05);
+  border-left: 2px solid rgba(56, 189, 248, .5);
+  cursor: default;
+}
+.scr-row.click { cursor: pointer; transition: background .15s, border-color .15s; }
+.scr-row.click:hover { background: rgba(56, 189, 248, .12); }
+.scr-row.click.on {
+  background: rgba(56, 189, 248, .16);
+  border-left-color: #7dd3fc;
+  box-shadow: inset 0 0 14px rgba(56, 189, 248, .1);
+}
+.scr-row .main { min-width: 0; }
+.scr-row .t1 {
+  display: block;
+  font-size: 12.5px;
+  color: #e0f2fe;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scr-row .t2 {
+  display: block;
+  font-size: 11px;
+  color: var(--scr-dim, #7fa8d6);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scr-row .side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+
+/* ===== 横条排行(rank/type 共用视觉) ===== */
+.scr-bars { padding: 0 12px 4px; }
+.scr-bars .row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.scr-bars .name {
+  font-size: 12px;
+  color: var(--scr-text, #cfe6ff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scr-bars .track { flex: 1; height: 8px; border-radius: 4px; background: rgba(56, 189, 248, .12); overflow: hidden; }
+.scr-bars .track i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--bar, linear-gradient(90deg, #2563eb, #38bdf8));
+  transition: width .6s;
+}
+.scr-bars .val {
+  min-width: 28px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  color: #7dd3fc;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 3D 容器 ===== */
+.scene-host { position: relative; flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; }
+.scene-hud {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+.scene-hud .chip {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #9ec9ee;
+  background: rgba(4, 16, 42, .66);
+  border: 1px solid rgba(56, 189, 248, .28);
+  backdrop-filter: blur(4px);
+  font-variant-numeric: tabular-nums;
+}
+.scene-tip {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--scr-dim, #7fa8d6);
+  background: rgba(4, 16, 42, .5);
+  border: 1px solid rgba(56, 189, 248, .18);
+  pointer-events: none;
+}
+.scene-legend {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  pointer-events: none;
+}
+.scene-legend .li { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #9ec9ee; }
+.scene-legend .li i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 6px currentColor;
+}
+
+/* ===== 图表容器 ===== */
+.chart-box { flex: 1; min-height: 0; width: 100%; }
+
+/* el-tag 暗色微调(effect=dark 已够用,补对齐) */
+.scr-panel .el-tag { flex-shrink: 0; }
+
+/* ===== 播放控制(飞行记录回放) ===== */
+.play-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(4, 16, 42, .78);
+  border: 1px solid rgba(56, 189, 248, .3);
+  backdrop-filter: blur(6px);
+}
+.play-bar .time { font-size: 11px; color: #7dd3fc; font-variant-numeric: tabular-nums; white-space: nowrap; }

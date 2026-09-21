@@ -423,17 +423,60 @@ await page.waitForTimeout(1500)
   await page.waitForTimeout(600)
 }
 
-// 服务大屏:独立全屏路由,不套 Layout,故单独校验
-console.log('\n[8] 服务大屏')
-await page.goto(BASE + '/#/screen', { waitUntil: 'networkidle' })
-await page.waitForTimeout(3000)
-const kpiRings = await page.locator('.kpi-ring').count()
-const mapMarks = await page.locator('.map circle').count()
-const panels = await page.locator('.panel').count()
-kpiRings === 5 && mapMarks > 0
-  ? ok(`大屏渲染:${panels} 个面板 / ${kpiRings} 个 KPI 环 / ${mapMarks} 个地图标记`)
-  : bad('服务大屏', `面板=${panels} KPI环=${kpiRings} 地图标记=${mapMarks}`)
-await page.screenshot({ path: `${OUT}/20-screen.png`, fullPage: false })
+// 服务大屏:独立全屏路由,不套 Layout;拆 8 个子屏逐 tab 校验
+// 每 tab 断言:面板数 + 关键元素(KPI 环 / 3D canvas / echarts canvas / 列表行),并出截图
+console.log('\n[8] 服务大屏 · 8 子屏')
+const SCREEN_TABS = [
+  { key: 'home', label: '首页', check: async () => {
+    const rings = await page.locator('.kpi-ring').count()
+    return { n: rings, want: 5, what: 'KPI 环' }
+  } },
+  { key: 'emergency', label: '应急专题', check: async () => {
+    const kpis = await page.locator('.scr-kpi').count()
+    return { n: kpis, want: 4, what: 'KPI 卡' }
+  } },
+  { key: 'ecology', label: '生态专题', check: async () => {
+    const bars = await page.locator('.scr-bars .row').count()
+    return { n: bars, want: 4, what: '横条组(算法/臭气)' }
+  } },
+  { key: 'orders', label: '工单管理', check: async () => {
+    const rows = await page.locator('.scr-row').count()
+    return { n: rows, want: 5, what: '工单行' }
+  } },
+  { key: 'pilots', label: '飞手管理', check: async () => {
+    const cards = await page.locator('.card').count()
+    return { n: cards, want: 8, what: '飞手卡片' }
+  } },
+  { key: 'devices', label: '设备监控', check: async () => {
+    const rows = await page.locator('.scr-row').count()
+    return { n: rows, want: 3, what: '设备/指令/事件行' }
+  } },
+  { key: 'waylines', label: '航线管理', check: async () => {
+    const rows = await page.locator('.scr-row').count()
+    return { n: rows, want: 3, what: '航线/任务行' }
+  } },
+  { key: 'flights', label: '飞行记录', check: async () => {
+    const bar = await page.locator('.play-bar').count()
+    return { n: bar, want: 1, what: '回放控制条' }
+  } }
+]
+const THREE_D_TABS = ['home', 'emergency', 'ecology', 'devices', 'waylines', 'flights']
+for (const t of SCREEN_TABS) {
+  await page.goto(`${BASE}/#/screen?tab=${t.key}`, { waitUntil: 'networkidle' })
+  await page.waitForTimeout(3500)
+  const panels = await page.locator('.scr-panel').count()
+  const { n, want, what } = await t.check()
+  let good = panels > 0 && n >= want
+  // 3D 屏必须有 Scene3D 画布;图表屏必须有 echarts 画布
+  const sceneCanvas = await page.locator('.scene3d-canvas canvas').count()
+  const chartCanvas = await page.locator('.scr-panel canvas').count()
+  if (THREE_D_TABS.includes(t.key)) good = good && sceneCanvas > 0
+  else good = good && chartCanvas > 0
+  good
+    ? ok(`大屏·${t.label}:面板 ${panels} / ${what} ${n}${sceneCanvas ? ' / 3D 画布就绪' : ''}`)
+    : bad(`大屏·${t.label}`, `面板=${panels} ${what}=${n}(需≥${want}) 3D画布=${sceneCanvas} 图表画布=${chartCanvas}`)
+  await page.screenshot({ path: `${OUT}/30-screen-${t.key}.png`, fullPage: false })
+}
 
 console.log('\n' + '='.repeat(74))
 if (problems.length === 0) {
