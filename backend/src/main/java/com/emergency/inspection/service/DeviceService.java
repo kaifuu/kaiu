@@ -14,6 +14,7 @@ import com.emergency.inspection.entity.DeviceEvent;
 import com.emergency.inspection.entity.DeviceLogFile;
 import com.emergency.inspection.entity.DeviceOsd;
 import com.emergency.inspection.entity.DeviceTrackPoint;
+import com.emergency.inspection.entity.Pilot;
 import com.emergency.inspection.mapper.DeviceAiConfigMapper;
 import com.emergency.inspection.mapper.DeviceAiTargetMapper;
 import com.emergency.inspection.mapper.DeviceEventMapper;
@@ -21,6 +22,7 @@ import com.emergency.inspection.mapper.DeviceLogFileMapper;
 import com.emergency.inspection.mapper.DeviceMapper;
 import com.emergency.inspection.mapper.DeviceOsdMapper;
 import com.emergency.inspection.mapper.DeviceTrackPointMapper;
+import com.emergency.inspection.mapper.PilotMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,6 +50,7 @@ public class DeviceService {
     private final DeviceAiTargetMapper aiTargetMapper;
     private final DeviceLogFileMapper logFileMapper;
     private final DeviceTrackPointMapper trackMapper;
+    private final PilotMapper pilotMapper;
     private final SafeAlertService safeAlertService;
     private final ObjectMapper objectMapper;
 
@@ -115,6 +118,7 @@ public class DeviceService {
         body.setId(null);
         body.setStatus(Device.Status.OFFLINE);
         body.setBoundAt(LocalDateTime.now());
+        applyLedgerDefaults(body);
         deviceMapper.insert(body);
         fillNames(List.of(body));
         return body;
@@ -123,6 +127,7 @@ public class DeviceService {
     @Transactional
     public Device update(Long id, Device body) {
         Device device = require(id);
+        validateLedger(body);
         if (body.getName() != null) {
             device.setName(body.getName());
         }
@@ -134,6 +139,38 @@ public class DeviceService {
         }
         if (body.getRemark() != null) {
             device.setRemark(body.getRemark());
+        }
+        // ---------- 台账字段(null = 未提交,不动) ----------
+        if (body.getManufacturer() != null) {
+            device.setManufacturer(body.getManufacturer());
+        }
+        if (body.getUsage() != null) {
+            device.setUsage(body.getUsage());
+        }
+        if (body.getHomeLng() != null) {
+            device.setHomeLng(body.getHomeLng());
+        }
+        if (body.getHomeLat() != null) {
+            device.setHomeLat(body.getHomeLat());
+        }
+        if (body.getMaxAltitude() != null) {
+            device.setMaxAltitude(body.getMaxAltitude());
+        }
+        if (body.getMaxEndurance() != null) {
+            device.setMaxEndurance(body.getMaxEndurance());
+        }
+        if (body.getEnabled() != null) {
+            device.setEnabled(body.getEnabled());
+        }
+        if (body.getVirtual() != null) {
+            device.setVirtual(body.getVirtual());
+        }
+        if (body.getIcon() != null) {
+            device.setIcon(body.getIcon());
+        }
+        // pilotId:>0 绑定 / 0 显式解绑 / null 未提交
+        if (body.getPilotId() != null) {
+            device.setPilotId(body.getPilotId() > 0 ? body.getPilotId() : null);
         }
         if (body.getGatewaySn() != null && !body.getGatewaySn().isBlank()) {
             if (device.getDeviceType() != Device.DeviceType.DRONE) {
@@ -175,6 +212,7 @@ public class DeviceService {
         if (device.getRemark() == null) {
             device.setRemark("由机场拓扑上报自动登记");
         }
+        applyLedgerDefaults(device);
         deviceMapper.insert(device);
         return device;
     }
@@ -211,6 +249,53 @@ public class DeviceService {
         if (body.getDeviceType() == null) {
             throw BizException.of("请选择设备类型(无人机 / 机场)");
         }
+        validateLedger(body);
+    }
+
+    /**
+     * 台账字段默认值。手工新增与拓扑自动登记共用。
+     *
+     * <p>建表虽有 DEFAULT,但实体 insert 时 null 会被显式写入,必须在应用层补齐。
+     * 模拟器设备(SN 含 SIM)自动标记为虚拟设备,便于台账上与真机区分。
+     */
+    private void applyLedgerDefaults(Device d) {
+        if (d.getEnabled() == null) {
+            d.setEnabled(true);
+        }
+        if (d.getVirtual() == null) {
+            d.setVirtual(d.getDeviceSn() != null && d.getDeviceSn().toUpperCase().contains("SIM"));
+        }
+        if (d.getIcon() == null) {
+            d.setIcon("");
+        }
+        if (d.getPilotId() != null && d.getPilotId() <= 0) {
+            d.setPilotId(null);
+        }
+        if (d.getManufacturer() == null || d.getManufacturer().isBlank()) {
+            d.setManufacturer("大疆");
+        }
+    }
+
+    /** 台账字段范围校验:只在提交了值时才校验,未提交(null)一律放行 */
+    private void validateLedger(Device body) {
+        if (body.getHomeLng() != null && (body.getHomeLng().doubleValue() < -180 || body.getHomeLng().doubleValue() > 180)) {
+            throw BizException.of("经度应在 -180 ~ 180 之间");
+        }
+        if (body.getHomeLat() != null && (body.getHomeLat().doubleValue() < -90 || body.getHomeLat().doubleValue() > 90)) {
+            throw BizException.of("纬度应在 -90 ~ 90 之间");
+        }
+        if (body.getMaxAltitude() != null
+                && (body.getMaxAltitude().doubleValue() < 30 || body.getMaxAltitude().doubleValue() > 1000)) {
+            throw BizException.of("最大航高应在 30 ~ 1000 m 之间");
+        }
+        if (body.getMaxEndurance() != null
+                && (body.getMaxEndurance().doubleValue() < 10 || body.getMaxEndurance().doubleValue() > 360)) {
+            throw BizException.of("续航应在 10 ~ 360 min 之间");
+        }
+        if (body.getPilotId() != null && body.getPilotId() > 0
+                && pilotMapper.selectById(body.getPilotId()) == null) {
+            throw BizException.of("绑定的飞手不存在: " + body.getPilotId());
+        }
     }
 
     private void requireGateway(String gatewaySn) {
@@ -237,11 +322,32 @@ public class DeviceService {
                 : deviceMapper.selectList(Wrappers.<Device>lambdaQuery().in(Device::getDeviceSn, gatewaySns))
                         .stream().collect(Collectors.toMap(Device::getDeviceSn, Function.identity(), (a, b) -> a));
 
+        // 绑定飞手姓名:一次 in() 批量取,避免逐行 selectById
+        Set<Long> pilotIds = devices.stream()
+                .map(Device::getPilotId).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, String> pilotNames = pilotIds.isEmpty() ? Map.of()
+                : pilotMapper.selectList(Wrappers.<Pilot>lambdaQuery().in(Pilot::getId, pilotIds))
+                        .stream().collect(Collectors.toMap(Pilot::getId, Pilot::getName, (a, b) -> a));
+
+        // 最新遥测模式码:前端据此把 ONLINE 派生为「飞行中/待命」,同样批量取
+        Set<String> sns = devices.stream()
+                .map(Device::getDeviceSn).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        Map<String, Integer> modeCodes = sns.isEmpty() ? Map.of()
+                : osdMapper.selectList(Wrappers.<DeviceOsd>lambdaQuery()
+                        .select(DeviceOsd::getDeviceSn, DeviceOsd::getModeCode)
+                        .in(DeviceOsd::getDeviceSn, sns))
+                .stream().filter(o -> o.getModeCode() != null)
+                .collect(Collectors.toMap(DeviceOsd::getDeviceSn, DeviceOsd::getModeCode, (a, b) -> a));
+
         for (Device d : devices) {
             if (d.getGatewaySn() != null) {
                 Device dock = docks.get(d.getGatewaySn());
                 d.setGatewayName(dock == null ? null : dock.getName());
             }
+            if (d.getPilotId() != null) {
+                d.setPilotName(pilotNames.get(d.getPilotId()));
+            }
+            d.setModeCode(modeCodes.get(d.getDeviceSn()));
             if (d.getDeviceType() == Device.DeviceType.DOCK) {
                 Long count = deviceMapper.selectCount(
                         Wrappers.<Device>lambdaQuery().eq(Device::getGatewaySn, d.getDeviceSn()));
@@ -260,12 +366,37 @@ public class DeviceService {
             log.warn("未登记的设备接入: {} —— 请先在设备管理中添加该序列号", sn);
             return;
         }
+        // 已停用的设备拒绝接入:保持 OFFLINE,不刷新 lastOnlineAt(台账与历史数据保留)
+        if (Boolean.FALSE.equals(device.getEnabled())) {
+            log.warn("已停用的设备尝试接入,已拒绝: {} —— 如需恢复请在设备管理启用", sn);
+            recordEvent(sn, DeviceEvent.EventType.OFFLINE, "device_disabled", DeviceEvent.Level.WARN,
+                    "设备已停用,接入被拒绝", null);
+            return;
+        }
+        // 每次连接都刷新「最近在线」:后端重启后库里的状态仍是 ONLINE,
+        // 若只在状态跃迁时更新,台账上的最近在线会一直停在重启前的时间。
+        device.setLastOnlineAt(LocalDateTime.now());
         if (device.getStatus() != Device.Status.ONLINE) {
             device.setStatus(Device.Status.ONLINE);
-            device.setLastOnlineAt(LocalDateTime.now());
             deviceMapper.updateById(device);
             recordEvent(sn, DeviceEvent.EventType.ONLINE, "device_online", DeviceEvent.Level.INFO,
                     "设备已接入平台", null);
+        } else {
+            deviceMapper.updateById(device);
+        }
+        // 机场在线,其挂载的无人机随之在线 —— 无人机没有独立 MQTT 连接,经机场转发可达。
+        // 与 markOffline 的下线联动对称,否则台账上会出现「机场在线、无人机离线」的矛盾态。
+        List<Device> children = deviceMapper.selectList(
+                Wrappers.<Device>lambdaQuery().eq(Device::getGatewaySn, sn));
+        for (Device child : children) {
+            boolean wasOffline = child.getStatus() != Device.Status.ONLINE;
+            child.setStatus(Device.Status.ONLINE);
+            child.setLastOnlineAt(LocalDateTime.now());
+            deviceMapper.updateById(child);
+            if (wasOffline) {
+                recordEvent(child.getDeviceSn(), DeviceEvent.EventType.ONLINE, "device_online",
+                        DeviceEvent.Level.INFO, "所属机场在线,飞行器随之在线", null);
+            }
         }
     }
 
@@ -298,6 +429,11 @@ public class DeviceService {
     /** 保存最新遥测:原始报文整体留存,常用字段抽列 */
     @Transactional
     public void saveOsd(String sn, JsonNode osd) {
+        // 已停用的设备不落遥测:否则轨迹表会被停用设备持续写入(每帧一行,无清理策略)
+        Device dev = findBySn(sn);
+        if (dev != null && Boolean.FALSE.equals(dev.getEnabled())) {
+            return;
+        }
         DeviceOsd row = osdMapper.selectOne(
                 Wrappers.<DeviceOsd>lambdaQuery().eq(DeviceOsd::getDeviceSn, sn).last("limit 1"));
         boolean isNew = row == null;

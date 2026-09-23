@@ -357,6 +357,38 @@ if (await droneRow.count()) {
   bad('无人机控制页', '列表中没有无人机')
 }
 
+// 设备台账:参考 10_WRJ 补齐的规格/归属字段与启停开关
+console.log('\n[6.2] 设备台账(机场 / 无人机)')
+{
+  await page.goto(BASE + '/#/docks', { waitUntil: 'networkidle' })
+  await page.waitForTimeout(1800)
+  const heads = await page.locator('.el-table__header th').allInnerTexts()
+  const has = (t) => heads.some((h) => h.includes(t))
+  const wantDock = ['图标', '厂商', '部署位置', '挂载', '启停', '接入']
+  const missDock = wantDock.filter((w) => !has(w))
+  missDock.length === 0
+    ? ok(`机场台账列齐全(${wantDock.join('/')})`)
+    : bad('机场台账列', '缺 ' + missDock.join('/'))
+
+  const dockIcons = await page.locator('.el-table__body img.row-icon').count()
+  const dockSwitch = await page.locator('.el-table__body .el-switch').count()
+  dockIcons > 0 && dockSwitch > 0
+    ? ok(`机场台账控件:图标 ${dockIcons} 个 / 启停开关 ${dockSwitch} 个`)
+    : bad('机场台账控件', `图标=${dockIcons} 开关=${dockSwitch}`)
+  await page.screenshot({ path: `${OUT}/31-dock-ledger.png`, fullPage: true })
+
+  await page.goto(BASE + '/#/drones', { waitUntil: 'networkidle' })
+  await page.waitForTimeout(1800)
+  const dHeads = await page.locator('.el-table__header th').allInnerTexts()
+  const dHas = (t) => dHeads.some((h) => h.includes(t))
+  const wantDrone = ['图标', '厂商', '用途', '飞手', '启停', '接入']
+  const missDrone = wantDrone.filter((w) => !dHas(w))
+  missDrone.length === 0
+    ? ok(`无人机台账列齐全(${wantDrone.join('/')})`)
+    : bad('无人机台账列', '缺 ' + missDrone.join('/'))
+  await page.screenshot({ path: `${OUT}/31-drone-ledger.png`, fullPage: true })
+}
+
 // AI 值班助手:全局悬浮球 + 对话窗问答
 console.log('\n[6.5] AI 值班助手')
 {

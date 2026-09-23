@@ -267,6 +267,18 @@ CREATE TABLE IF NOT EXISTS device (
     bound_at         TIMESTAMP,
     last_online_at   TIMESTAMP,
     remark           VARCHAR(500),
+    -- 设备台账:规格与归属(参考 10_WRJ 设备台账模型)
+    manufacturer     VARCHAR(64),
+    usage            VARCHAR(32),
+    home_lng         NUMERIC(10, 6),
+    home_lat         NUMERIC(10, 6),
+    max_altitude     NUMERIC(6, 1),
+    max_endurance    NUMERIC(5, 1),
+    pilot_id         BIGINT,
+    enabled          BOOLEAN      NOT NULL DEFAULT TRUE,
+    virtual          BOOLEAN      NOT NULL DEFAULT FALSE,
+    -- 地图图标:''=按类型默认 SVG / 'preset:xxx'=预设 / dataURL=用户上传(故用 TEXT)
+    icon             TEXT,
     create_time      TIMESTAMP    NOT NULL DEFAULT NOW(),
     update_time      TIMESTAMP,
     CONSTRAINT uk_device_sn UNIQUE (device_sn),

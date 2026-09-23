@@ -36,6 +36,60 @@ public class SchemaMigration implements ApplicationRunner {
         tryExec("ALTER TABLE sys_menu ADD CONSTRAINT ck_sys_menu_group "
                         + "CHECK (menu_group IN ('BIZ', 'SVC', 'SYS'))",
                 "菜单分组约束已放行 SVC");
+
+        // 设备台账字段:device 表是 CREATE TABLE IF NOT EXISTS,存量库拿不到新列,逐列补齐。
+        // ADD COLUMN IF NOT EXISTS 本身幂等,重复启动不会报错。
+        migrateDeviceLedger();
+    }
+
+    /** 设备台账:规格与归属字段(参考 10_WRJ 的设备台账模型) */
+    private void migrateDeviceLedger() {
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(64)",
+                "device.manufacturer");
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS usage VARCHAR(32)",
+                "device.usage");
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS home_lng NUMERIC(10,6)",
+                "device.home_lng");
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS home_lat NUMERIC(10,6)",
+                "device.home_lat");
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS max_altitude NUMERIC(6,1)",
+                "device.max_altitude");
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS max_endurance NUMERIC(5,1)",
+                "device.max_endurance");
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS pilot_id BIGINT",
+                "device.pilot_id");
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE",
+                "device.enabled");
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS virtual BOOLEAN NOT NULL DEFAULT FALSE",
+                "device.virtual");
+        // 自定义图标存 dataURL(参考实现限 200KB,base64 后约 273KB),必须 TEXT
+        tryExec("ALTER TABLE device ADD COLUMN IF NOT EXISTS icon TEXT",
+                "device.icon");
+
+        // 存量行回填:新列对老数据是 NULL,而代码按 '' 语义处理 icon
+        tryExec("UPDATE device SET icon = '' WHERE icon IS NULL",
+                "device.icon 回填空串");
+        // 模拟器接入的设备(SN 含 SIM)标记为虚拟设备,便于台账上与真机区分
+        tryExec("UPDATE device SET virtual = TRUE WHERE virtual = FALSE AND UPPER(device_sn) LIKE '%SIM%'",
+                "device.virtual 回填模拟器设备");
+        // 本平台走大疆上云 API,存量设备厂商统一回填
+        tryExec("UPDATE device SET manufacturer = '大疆' WHERE manufacturer IS NULL",
+                "device.manufacturer 回填");
+        // 部署/归航坐标缺省用厂区锚点(与演示数据的厂区中心一致)
+        tryExec("UPDATE device SET home_lng = 116.1836, home_lat = 39.9132 "
+                        + "WHERE home_lng IS NULL OR home_lat IS NULL",
+                "device 坐标回填厂区锚点");
+        // 飞行器规格缺省值(DJI M3D 量级:500m 航高 / 55min 续航)
+        tryExec("UPDATE device SET usage = '巡检' WHERE device_type = 'DRONE' AND usage IS NULL",
+                "device.usage 回填");
+        tryExec("UPDATE device SET max_altitude = 500, max_endurance = 55 "
+                        + "WHERE device_type = 'DRONE' AND max_altitude IS NULL",
+                "device 航高/续航回填");
+        // 虚拟(模拟器)飞行器绑定一台飞手,便于演示台账的归属展示;真机不自动绑定
+        tryExec("UPDATE device SET pilot_id = (SELECT id FROM pilot ORDER BY id LIMIT 1) "
+                        + "WHERE device_type = 'DRONE' AND virtual = TRUE AND pilot_id IS NULL "
+                        + "AND EXISTS (SELECT 1 FROM pilot)",
+                "device.pilot_id 回填(仅虚拟设备)");
     }
 
     private void tryExec(String sql, String okMsg) {

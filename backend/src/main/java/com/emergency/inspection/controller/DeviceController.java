@@ -179,11 +179,18 @@ public class DeviceController {
         long dockTotal = all.stream().filter(d -> d.getDeviceType() == Device.DeviceType.DOCK).count();
         long droneTotal = all.stream().filter(d -> d.getDeviceType() == Device.DeviceType.DRONE).count();
         long online = all.stream().filter(d -> d.getStatus() == Device.Status.ONLINE).count();
+        // 无人机挂载口径:上云 API 中无人机是机场子设备,未挂载则无从下发指令
+        long droneMounted = all.stream()
+                .filter(d -> d.getDeviceType() == Device.DeviceType.DRONE)
+                .filter(d -> d.getGatewaySn() != null && !d.getGatewaySn().isBlank())
+                .count();
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("total", all.size());
         out.put("dockTotal", dockTotal);
         out.put("droneTotal", droneTotal);
+        out.put("droneMounted", droneMounted);
+        out.put("droneUnmounted", droneTotal - droneMounted);
         out.put("online", online);
         out.put("offline", all.size() - online);
         out.put("mqttOnline", sessionManager.size());

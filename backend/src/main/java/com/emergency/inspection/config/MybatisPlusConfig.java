@@ -36,7 +36,11 @@ public class MybatisPlusConfig {
 
             @Override
             public void updateFill(MetaObject metaObject) {
-                strictUpdateFill(metaObject, "updateTime", LocalDateTime.class, LocalDateTime.now());
+                // 用 setFieldValByName 而非 strictUpdateFill:后者只在字段为 null 时填充,
+                // 而"先 select 出实体、改几个字段再 updateById"是本项目的常见写法,
+                // 此时 updateTime 已被读出来的旧值占位,strict 版本会直接跳过 ——
+                // 表现为 update_time 永远停在插入时刻(如 device_osd 的最新遥测时间)。
+                setFieldValByName("updateTime", LocalDateTime.now(), metaObject);
             }
         };
     }

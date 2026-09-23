@@ -45,6 +45,7 @@
               @click="select(d.id)">
               <div class="main">
                 <span class="t1">
+                  <img class="dev-ico" :src="resolveDeviceIcon(d, { online: d.status === 'ONLINE', color: '#7dd3fc', bg: 'transparent' })" />
                   <i class="st-dot" :class="d.status === 'ONLINE' ? 'on' : 'off'" />{{ d.name }}
                 </span>
                 <span class="t2">
@@ -126,6 +127,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import http from '../../api'
 import Scene3D from './Scene3D.vue'
 import { DEVICE_TYPE, AIRCRAFT_MODE, COMMAND_STATUS, DEVICE_EVENT_TYPE, dictLabel, dictTag } from '../../utils/dict'
+import { resolveDeviceIcon } from '../../utils/deviceIcon'
 
 const REFRESH_MS = 5000 // 设备遥测屏刷新更勤
 const data = ref({})
@@ -240,6 +242,7 @@ onUnmounted(() => {
 .scene-panel { padding-bottom: 0; }
 
 .st-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.dev-ico { width: 16px; height: 16px; vertical-align: -3px; margin-right: 6px; opacity: .9; }
 .st-dot.on { background: #34d399; box-shadow: 0 0 6px #34d399; }
 .st-dot.off { background: #64748b; }
 .batt { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
