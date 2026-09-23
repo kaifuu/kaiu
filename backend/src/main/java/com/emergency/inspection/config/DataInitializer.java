@@ -49,6 +49,7 @@ import com.emergency.inspection.mapper.WaylineMapper;
 import com.emergency.inspection.service.WaylineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -61,8 +62,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 首次启动写入演示数据:租户/组织/菜单/角色/用户 + 应急巡检业务样例。
- * 幂等:已存在用户则整段跳过,仅补齐缺失菜单。
+ * 首次启动写入基础数据与演示数据。
+ *
+ * <p>基础数据(菜单/租户/组织/角色/用户/算法注册表)所有环境都需要;
+ * 演示数据(点位/任务/工单/告警历史/臭气站等)由 {@code app.seed.demo-data} 控制,
+ * 生产环境(application-prod.yml)默认为 false,避免把样例数据灌进正式库。
+ *
+ * <p>幂等:已存在用户则跳过演示数据,仅补齐缺失菜单。
  */
 @Slf4j
 @Component
@@ -70,6 +76,10 @@ import java.util.List;
 public class DataInitializer implements CommandLineRunner {
 
     private static final BCryptPasswordEncoder ENCODER = new BCryptPasswordEncoder();
+
+    /** 演示数据开关:false 时只写基础数据 */
+    @Value("${app.seed.demo-data:true}")
+    private boolean demoDataEnabled;
 
     private final SysTenantMapper tenantMapper;
     private final SysOrgMapper orgMapper;
@@ -127,24 +137,34 @@ public class DataInitializer implements CommandLineRunner {
         ensureMenus();
         if (userMapper.selectCount(Wrappers.<SysUser>lambdaQuery()) > 0) {
             log.info("已存在用户数据,跳过演示数据初始化");
+            // 算法注册表属基础配置(生产也需要),存量库也补一次(内部自带幂等判断)
+            seedAlgorithmData();
+            if (!demoDataEnabled) {
+                return;
+            }
             // 巡检服务模块是后加的,存量库也补一次(内部自带幂等判断)
             seedServiceData();
             seedDockExtData();
-            seedAlgorithmData();
             seedFenceData();
             seedFlightData();
             return;
         }
-        log.info("首次启动,写入演示数据 ...");
+        log.info("首次启动,写入基础数据 ...");
 
         SysTenant tenant = seedTenant();
         SysOrg root = seedOrgs();
         SysRole adminRole = seedRoles();
         seedUsers(tenant, root, adminRole);
+        // 算法注册表属基础配置,与演示数据开关无关
+        seedAlgorithmData();
+
+        if (!demoDataEnabled) {
+            log.info("演示数据开关已关闭(app.seed.demo-data=false),仅写入基础数据");
+            return;
+        }
         seedBusinessData();
         seedServiceData();
         seedDockExtData();
-        seedAlgorithmData();
         seedFenceData();
         seedFlightData();
 
@@ -528,6 +548,10 @@ public class DataInitializer implements CommandLineRunner {
                     "识别路面含盐废水、罐区/除臭系统围堰渗漏、可燃废液罐区泄漏,量算扩散面积并估算流速。",
                     "厂区道路 / 罐区围堰 / 废液罐区", false, false, AiAlgorithm.Level.ERROR));
             log.info("算法注册表写入完成:6 个算法");
+        }
+        // 臭气监测点位与告警历史属演示数据,生产环境不注入(算法注册表属基础配置,保留)
+        if (!demoDataEnabled) {
+            return;
         }
         if (odorStationMapper.selectCount(Wrappers.<AiOdorStation>lambdaQuery()) == 0) {
             odorStationMapper.insert(odorStation("OS-01", "填埋一区站", "填埋库区", "116.180000", "39.915000"));

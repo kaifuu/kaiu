@@ -1,0 +1,25 @@
+# 生产配置:所有敏感项必须由环境变量提供。
+# 未设置的环境变量(无默认值)会导致启动失败——这是刻意的 fail-fast,
+# 避免用弱默认值(明文口令 / 公开密钥)静默上线。
+spring:
+  datasource:
+    url: ${DB_URL}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+jwt:
+  secret: ${JWT_SECRET}
+
+# 新增/重置用户的默认口令,生产必须显式指定
+user:
+  default-password: ${USER_DEFAULT_PASSWORD}
+
+# 生产不注入演示数据(菜单/租户/组织/角色/用户/算法注册表等基础数据仍会初始化)
+app:
+  seed:
+    demo-data: false
+
+logging:
+  level:
+    com.emergency: info
