@@ -15,6 +15,13 @@ frontend_run.log
 tools/dji-sim/node_modules/
 tools/dji-sim/package-lock.json
 
+# ---- 需求原件与演示视频 ----
+# 二进制资料(需求 docx / 录屏 mp4)只作本地参考,不入库:
+# 一旦提交会永久留在 git 历史,每次 clone 都要拉取,替换文件时仓库体积只增不减。
+# 方案文档(doc/*.md)里引用的 doc/req/ 路径指本地文件,不在仓库内。
+doc/req/
+doc/vedio/
+
 # ---- 工具 ----
 .idea/
 .vscode/
